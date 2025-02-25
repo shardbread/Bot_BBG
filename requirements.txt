@@ -1,0 +1,7 @@
+ccxt==4.2.72
+pandas==2.2.0
+numpy==1.26.4
+tensorflow==2.15.0
+aiohttp==3.9.3
+python-dotenv==1.0.1
+scikit-learn

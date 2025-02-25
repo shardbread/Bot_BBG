@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# config.py
+import os
+from dotenv import load_dotenv
+
+# Загружаем переменные из .env
+load_dotenv()
+
+CACHE_TIMEOUT = 60
+BASE_PRICE_ADJUSTMENT = 0.002
+DEPTH_LEVELS = 5
+MAX_DRAWDOWN = 0.05
+BASE_MAX_POSITION_SIZE = 0.2
+BASE_DAILY_LOSS_LIMIT = 0.03
+FIXED_STOP_LOSS = 0.02
+INITIAL_MAX_OPEN_ORDERS = 2
+VOLATILITY_THRESHOLD = 0.10
+LOOKBACK = 28
+SEQUENCE_LENGTH = 10
+INITIAL_BALANCE = 228.0
+MIN_ORDER_SIZE = 10.0
+
+# Токены из переменных окружения
+BINANCE_API_KEY = os.getenv('BINANCE_API_KEY')
+BINANCE_SECRET = os.getenv('BINANCE_SECRET')
+BINGX_API_KEY = os.getenv('BINGX_API_KEY')
+BINGX_SECRET = os.getenv('BINGX_SECRET')
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+
+TRADING_PAIRS = [
+    'ETH/USDT', 'BTC/USDT', 'DOGE/USDT', 'XRP/USDT', 'BNB/USDT', 'ADA/USDT'
+]
