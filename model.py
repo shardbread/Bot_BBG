@@ -15,8 +15,8 @@ def build_gru_model(input_shape):
     model.add(Bidirectional(GRU(30, kernel_regularizer=l2(0.01))))
     model.add(BatchNormalization())
     model.add(Dropout(0.2))
-    model.add(Dense(1, activation='sigmoid'))  # Изменено на sigmoid для вероятностей 0-1
-    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])  # Классификация
+    model.add(Dense(1, activation='sigmoid'))
+    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
     return model
 
 def train_gru_model(X, y):

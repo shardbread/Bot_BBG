@@ -8,10 +8,7 @@ from ta.volatility import BollingerBands, AverageTrueRange
 from sklearn.preprocessing import MinMaxScaler
 import logging
 
-from config import LOOKBACK, SEQUENCE_LENGTH
-
-
-async def get_historical_data(exchange, symbol, timeframe='5m', limit=LOOKBACK + SEQUENCE_LENGTH):
+async def get_historical_data(exchange, symbol, timeframe='5m', limit=100):
     ohlcv = await exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
     df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')

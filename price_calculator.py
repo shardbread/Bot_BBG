@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+import pandas as pd
+import numpy as np
+import logging
+import asyncio
+
 
 async def get_order_book(exchange, symbol):
     order_book = await exchange.fetch_order_book(symbol)
