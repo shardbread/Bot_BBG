@@ -41,7 +41,7 @@ def add_features(df):
     df['BB_upper'] = bb_upper
     df['BB_lower'] = bb_lower
     df['ATR'] = compute_atr(df)
-    df['Target'] = (df['close'].shift(-1) > df['close'] * 1.005).astype(int)  # Рост > 0.5%
+    df['Target'] = (df['close'].shift(-1) > df['close'] * 1.001).astype(int)  # Рост > 0.1%
     return df.dropna()
 
 def prepare_lstm_data(df, lookback=60):
