@@ -97,12 +97,14 @@ async def trade_pair(exchanges, pair, balances, model, scaler, fees, atr, loss_m
     prediction = model.predict(X[-1:], verbose=0)[0][0]
     prob = prediction
 
+    logging.info(
+        f"{pair}: Проверка условий торговли: prob={prob:.6f}, MAX_PROB={MAX_PROB}, balance_quote_binance={balance_quote_binance:.2f}, MIN_ORDER_SIZE={MIN_ORDER_SIZE}")
+
     atr_stop_loss = atr * 2
     fixed_stop_loss = entry_price * (1 - FIXED_STOP_LOSS) if entry_price else 0
 
     if prob > MAX_PROB and balance_quote_binance > MIN_ORDER_SIZE:
-        amount = min(balance_quote_binance * 1.0 / binance_bid, balance_quote_binance / binance_bid,
-                     binance_bid_amount)  # Увеличено с 0.1 до 1.0
+        amount = min(balance_quote_binance * 1.0 / binance_bid, balance_quote_binance / binance_bid, binance_bid_amount)
         logging.info(
             f"{pair}: Рассчитан amount={amount:.6f} для покупки, bid={binance_bid}, balance_quote_binance={balance_quote_binance}")
         order = await manage_request(exchanges['binance'], 'create_limit_buy_order', pair, amount, binance_bid)
@@ -116,7 +118,7 @@ async def trade_pair(exchanges, pair, balances, model, scaler, fees, atr, loss_m
 
     elif balance_base > 0:
         if prob < MAX_PROB:
-            amount = min(balance_base * 1.0, balance_base, binance_ask_amount)  # Увеличено с 0.1 до 1.0
+            amount = min(balance_base * 1.0, balance_base, binance_ask_amount)
             logging.info(
                 f"{pair}: Рассчитан amount={amount:.6f} для продажи, ask={binance_ask}, balance_base={balance_base}")
             order = await manage_request(exchanges['binance'], 'create_limit_sell_order', pair, amount, binance_ask)

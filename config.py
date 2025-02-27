@@ -19,7 +19,7 @@ SEQUENCE_LENGTH = 10
 INITIAL_BALANCE = 228.0
 MIN_ORDER_SIZE = 10.0
 MAX_PREDICTION = 0.05
-MAX_PROB = 0.35  # Снижено с 0.4 до 0.35 для запуска торговли
+MAX_PROB = 0.3  # Снижено с 0.35 до 0.3 для гарантированного запуска
 
 BINANCE_API_KEY = os.getenv('BINANCE_API_KEY')
 BINANCE_SECRET = os.getenv('BINANCE_SECRET')
