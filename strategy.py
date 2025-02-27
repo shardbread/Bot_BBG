@@ -104,7 +104,17 @@ async def trade_pair(exchanges, pair, balances, model, scaler, fees, atr, loss_m
     fixed_stop_loss = entry_price * (1 - FIXED_STOP_LOSS) if entry_price else 0
 
     if prob > MAX_PROB and balance_quote_binance > MIN_ORDER_SIZE:
-        amount = min(balance_quote_binance * 1.0 / binance_bid, balance_quote_binance / binance_bid, binance_bid_amount)
+        # Устанавливаем минимальную сумму сделки 10 USDT и корректируем amount
+        min_notional = 10.0  # Минимальная сумма сделки в USDT
+        amount = max(min_notional / binance_bid, balance_quote_binance * 1.0 / binance_bid, binance_bid_amount)
+        if pair == 'XRP/USDT':
+            amount = max(amount, 1.0)  # Минимальное количество для XRP
+        elif pair == 'ETH/USDT':
+            amount = max(amount, 0.01)  # Минимальное количество для ETH
+        elif pair == 'BNB/USDT':
+            amount = max(amount, 0.1)  # Минимальное количество для BNB
+        elif pair == 'ADA/USDT':
+            amount = max(amount, 10.0)  # Минимальное количество для ADA
         logging.info(
             f"{pair}: Рассчитан amount={amount:.6f} для покупки, bid={binance_bid}, balance_quote_binance={balance_quote_binance}")
         order = await manage_request(exchanges['binance'], 'create_limit_buy_order', pair, amount, binance_bid)
