@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # limits.py
+import numpy as np
+
 from config import MAX_DRAWDOWN, BASE_DAILY_LOSS_LIMIT, VOLATILITY_THRESHOLD, LOOKBACK, SEQUENCE_LENGTH, \
     INITIAL_BALANCE, MIN_ORDER_SIZE
-from data import get_historical_data, get_ticker
+from data import get_historical_data, prepare_gru_data
+from exchange import get_ticker
 from globals import daily_losses, historical_losses, last_day, MAX_OPEN_ORDERS
 import logging
 import time

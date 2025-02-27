@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# config.py
 import os
 from dotenv import load_dotenv
 
-# Загружаем переменные из .env
 load_dotenv()
 
 CACHE_TIMEOUT = 60
@@ -20,8 +18,9 @@ LOOKBACK = 28
 SEQUENCE_LENGTH = 10
 INITIAL_BALANCE = 228.0
 MIN_ORDER_SIZE = 10.0
+MAX_PREDICTION = 0.05
+MAX_PROB = 0.5
 
-# Токены из переменных окружения
 BINANCE_API_KEY = os.getenv('BINANCE_API_KEY')
 BINANCE_SECRET = os.getenv('BINANCE_SECRET')
 BINGX_API_KEY = os.getenv('BINGX_API_KEY')

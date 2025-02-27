@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# main.py
+import os
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 import asyncio
 import signal
 from exchange import connect_exchange, fetch_fees, send_telegram_message
-from data import get_historical_data, prepare_lstm_data, prepare_gru_data
+from data import get_historical_data, prepare_lstm_data, prepare_gru_data, add_features
 from model import train_lstm_model, train_gru_model
 from strategy import trade_pair, select_profitable_pairs
 from order_management import shutdown
@@ -14,26 +16,43 @@ from globals import MAX_OPEN_ORDERS
 import logging
 from collections import defaultdict
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('trading_bot.log'),
+        logging.StreamHandler()
+    ],
+    force=True
+)
+
 running = True
 
 
 async def main():
     global running
+    logging.info("Запуск скрипта")
     exchanges = {
         'binance': await connect_exchange('binance'),
-        'bingx': await connect_exchange('bingx')
     }
 
     fees = {
-        'binance': await fetch_fees(exchanges['binance']),
-        'bingx': await fetch_fees(exchanges['bingx'])
+        'binance': {pair: {'maker': 0.001, 'taker': 0.001} for pair in TRADING_PAIRS} if 'testnet.binance.vision' in
+                                                                                         exchanges['binance'].urls[
+                                                                                             'api'][
+                                                                                             'public'] else await fetch_fees(
+            exchanges['binance']),
+        'bingx': {pair: {'maker': 0.001, 'taker': 0.001} for pair in TRADING_PAIRS}
     }
 
     data = await get_historical_data(exchanges['binance'], 'ETH/USDT', limit=2000)
+    data = add_features(data)
     X, y, scaler = prepare_lstm_data(data)
+    logging.info(f"Данные для обучения LSTM: X.shape={X.shape}, y.mean={y.mean():.4f}")
     pred_model = train_lstm_model(X, y)
 
     loss_data = await get_historical_data(exchanges['binance'], 'ETH/USDT', limit=2000)
+    loss_data = add_features(loss_data)
     X_loss, y_loss, loss_scaler = prepare_gru_data(loss_data, [0] * 38)
     loss_model = train_gru_model(X_loss, y_loss)
 
@@ -55,19 +74,26 @@ async def main():
     iteration = 0
     while running and iteration < 10:
         try:
+            logging.info(f"Начало итерации {iteration + 1}")
             can_trade_drawdown, reason_drawdown = check_drawdown(balances)
             if not can_trade_drawdown:
                 print(f"Торговля остановлена: {reason_drawdown}")
                 await send_telegram_message(f"Торговля остановлена: {reason_drawdown}")
                 break
 
+            logging.info("Вызов select_profitable_pairs")
             profitable_pairs = await select_profitable_pairs(exchanges, fees, pred_model, scaler, balances)
             logging.info(f"Выбраны пары: {profitable_pairs} с лимитом {MAX_OPEN_ORDERS}")
             await send_telegram_message(f"Выбраны пары для торговли: {profitable_pairs} с лимитом {MAX_OPEN_ORDERS}")
 
             tasks = []
             for pair in profitable_pairs:
-                atr = (await get_historical_data(exchanges['binance'], pair)).iloc[-1]['ATR']
+                historical_data = await get_historical_data(exchanges['binance'], pair, limit=100)
+                historical_data = add_features(historical_data)
+                if historical_data.empty:
+                    logging.warning(f"{pair}: Нет достаточно данных для расчёта индикаторов, пропускаем")
+                    continue
+                atr = historical_data.iloc[-1]['ATR']
                 can_trade_loss, reason_loss = await check_daily_loss_limit(exchanges['binance'], pair, balances, atr,
                                                                            loss_model, loss_scaler)
                 can_trade_vol, reason_vol = await check_volatility(exchanges['binance'], pair, atr)
@@ -90,6 +116,7 @@ async def main():
 
             iteration += 1
             print(f"Итерация {iteration} завершена")
+            logging.info(f"Конец итерации {iteration}")
 
         except Exception as e:
             logging.error(f"Ошибка: {str(e)}")
@@ -101,7 +128,6 @@ async def main():
         await shutdown(exchanges, balances, open_orders)
 
     await exchanges['binance'].close()
-    await exchanges['bingx'].close()
 
 
 if __name__ == "__main__":

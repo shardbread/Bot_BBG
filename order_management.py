@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # order_management.py
+import time
+
 from exchange import manage_request, send_telegram_message
 from globals import open_orders, running, daily_losses, historical_losses
 import logging

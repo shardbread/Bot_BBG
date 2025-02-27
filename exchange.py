@@ -1,61 +1,59 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# exchange.py
-import ccxt.async_support as ccxt_async
-import aiohttp
+import ccxt.async_support as ccxt
 import logging
-from collections import defaultdict
-import time
+import asyncio
 from config import BINANCE_API_KEY, BINANCE_SECRET, BINGX_API_KEY, BINGX_SECRET, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
-
-logging.basicConfig(filename='trading_bot.log', level=logging.INFO,
-                    format='%(asctime)s - %(message)s')
-
-request_timestamps = []
-cache = defaultdict(dict)
+import httpx
 
 async def connect_exchange(exchange_name):
     if exchange_name == 'binance':
-        if not BINANCE_API_KEY or not BINANCE_SECRET:
-            raise ValueError("Binance API Key or Secret not set in environment variables")
-        return ccxt_async.binance({
+        exchange = ccxt.binance({
             'apiKey': BINANCE_API_KEY,
             'secret': BINANCE_SECRET,
             'enableRateLimit': True,
-            'options': {'defaultType': 'spot'}
+            'options': {'defaultType': 'spot'},
         })
+        exchange.set_sandbox_mode(True)
     elif exchange_name == 'bingx':
-        if not BINGX_API_KEY or not BINGX_SECRET:
-            raise ValueError("BingX API Key or Secret not set in environment variables")
-        return ccxt_async.bingx({
+        exchange = ccxt.bingx({
             'apiKey': BINGX_API_KEY,
             'secret': BINGX_SECRET,
-            'enableRateLimit': True
+            'enableRateLimit': True,
         })
-    else:
-        raise ValueError(f"Unsupported exchange: {exchange_name}")
+    await exchange.load_markets()
+    return exchange
+
+async def fetch_fees(exchange):
+    fees = {}
+    markets = await exchange.load_markets()
+    for symbol in markets:
+        fees[symbol] = {'maker': markets[symbol]['maker'], 'taker': markets[symbol]['taker']}
+    return fees
+
+async def get_ticker(exchange, symbol):
+    ticker = await exchange.fetch_ticker(symbol)
+    return {
+        'bid': ticker['bid'],
+        'ask': ticker['ask'],
+        'last': ticker['last']
+    }
+
+async def manage_request(exchange, method, *args, **kwargs):
+    try:
+        result = await getattr(exchange, method)(*args, **kwargs)
+        return result
+    except Exception as e:
+        logging.error(f"Ошибка в {method}: {str(e)}")
+        raise e
 
 async def send_telegram_message(message):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        logging.error("Telegram Bot Token or Chat ID not set in environment variables")
+        logging.warning("Telegram токен или чат ID не настроены")
         return
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage?chat_id={TELEGRAM_CHAT_ID}&text={message}"
-    async with aiohttp.ClientSession() as session:
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    async with httpx.AsyncClient() as client:
         try:
-            await session.get(url)
+            await client.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": message})
         except Exception as e:
             logging.error(f"Ошибка отправки Telegram сообщения: {str(e)}")
-
-async def manage_request(exchange, method, *args, **kwargs):
-    global request_timestamps
-    current_time = time.time()
-    request_timestamps = [t for t in request_timestamps if current_time - t < 60]
-    limit = 20
-    if len(request_timestamps) >= limit:
-        await asyncio.sleep(1 / limit)
-    request_timestamps.append(current_time)
-    return await getattr(exchange, method)(*args, **kwargs)
-
-async def fetch_fees(exchange):
-    fees = await manage_request(exchange, 'fetch_trading_fees')
-    return {pair: {'maker': fee['maker'], 'taker': fee['taker']} for pair, fee in fees.items()}
