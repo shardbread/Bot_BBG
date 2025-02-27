@@ -54,7 +54,7 @@ async def main():
 
         loss_data = await get_historical_data(exchanges['binance'], 'ETH/USDT', limit=2000)
         loss_data = add_features(loss_data)
-        X_loss, y_loss, loss_scaler = prepare_gru_data(loss_data)  # Убираем [0] * 38
+        X_loss, y_loss, loss_scaler = prepare_gru_data(loss_data)
         logging.info(f"Обучение GRU-модели с X_loss.shape={X_loss.shape}, y_loss.shape={y_loss.shape}")
         loss_model = train_gru_model(X_loss, y_loss)
 
@@ -115,7 +115,10 @@ async def main():
                     tasks.append(
                         trade_pair(exchanges, pair, balances, pred_model, scaler, fees, atr, loss_model, loss_scaler,
                                    open_orders))
-                await asyncio.gather(*tasks)
+
+                # Ждём завершения всех задач перед паузой
+                if tasks:
+                    await asyncio.gather(*tasks, return_exceptions=True)
 
                 iteration += 1
                 print(f"Итерация {iteration} завершена")
