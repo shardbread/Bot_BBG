@@ -36,98 +36,105 @@ async def main():
         'binance': await connect_exchange('binance'),
     }
 
-    fees = {
-        'binance': {pair: {'maker': 0.001, 'taker': 0.001} for pair in TRADING_PAIRS} if 'testnet.binance.vision' in
-                                                                                         exchanges['binance'].urls[
-                                                                                             'api'][
-                                                                                             'public'] else await fetch_fees(
-            exchanges['binance']),
-        'bingx': {pair: {'maker': 0.001, 'taker': 0.001} for pair in TRADING_PAIRS}
-    }
-
-    data = await get_historical_data(exchanges['binance'], 'ETH/USDT', limit=2000)
-    data = add_features(data)
-    X, y, scaler = prepare_lstm_data(data)
-    logging.info(f"Данные для обучения LSTM: X.shape={X.shape}, y.mean={y.mean():.4f}")
-    pred_model = train_lstm_model(X, y)
-
-    loss_data = await get_historical_data(exchanges['binance'], 'ETH/USDT', limit=2000)
-    loss_data = add_features(loss_data)
-    X_loss, y_loss, loss_scaler = prepare_gru_data(loss_data, [0] * 38)
-    loss_model = train_gru_model(X_loss, y_loss)
-
-    balances = {}
-    open_orders = defaultdict(list)
-    for pair in TRADING_PAIRS:
-        balances[pair] = {
-            'base': 0.0,
-            'quote_binance': 128.0,
-            'quote_bingx': 100.0,
-            'entry_price': None,
-            'total_fees': 0.0
+    try:
+        fees = {
+            'binance': {pair: {'maker': 0.001, 'taker': 0.001} for pair in TRADING_PAIRS} if 'testnet.binance.vision' in
+                                                                                             exchanges['binance'].urls[
+                                                                                                 'api'][
+                                                                                                 'public'] else await fetch_fees(
+                exchanges['binance']),
+            'bingx': {pair: {'maker': 0.001, 'taker': 0.001} for pair in TRADING_PAIRS}
         }
 
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, lambda: asyncio.create_task(shutdown(exchanges, balances, open_orders)))
+        data = await get_historical_data(exchanges['binance'], 'ETH/USDT', limit=2000)
+        data = add_features(data)
+        X, y, scaler = prepare_lstm_data(data)
+        logging.info(f"Данные для обучения LSTM: X.shape={X.shape}, y.mean={y.mean():.4f}")
+        pred_model = train_lstm_model(X, y)
 
-    iteration = 0
-    while running and iteration < 10:
-        try:
-            logging.info(f"Начало итерации {iteration + 1}")
-            can_trade_drawdown, reason_drawdown = check_drawdown(balances)
-            if not can_trade_drawdown:
-                print(f"Торговля остановлена: {reason_drawdown}")
-                await send_telegram_message(f"Торговля остановлена: {reason_drawdown}")
-                break
+        loss_data = await get_historical_data(exchanges['binance'], 'ETH/USDT', limit=2000)
+        loss_data = add_features(loss_data)
+        X_loss, y_loss, loss_scaler = prepare_gru_data(loss_data, [0] * 38)
+        loss_model = train_gru_model(X_loss, y_loss)
 
-            logging.info("Вызов select_profitable_pairs")
-            profitable_pairs = await select_profitable_pairs(exchanges, fees, pred_model, scaler, balances)
-            logging.info(f"Выбраны пары: {profitable_pairs} с лимитом {MAX_OPEN_ORDERS}")
-            await send_telegram_message(f"Выбраны пары для торговли: {profitable_pairs} с лимитом {MAX_OPEN_ORDERS}")
+        balances = {}
+        open_orders = defaultdict(list)
+        for pair in TRADING_PAIRS:
+            balances[pair] = {
+                'base': 0.0,
+                'quote_binance': 128.0,
+                'quote_bingx': 100.0,
+                'entry_price': None,
+                'total_fees': 0.0
+            }
 
-            tasks = []
-            for pair in profitable_pairs:
-                historical_data = await get_historical_data(exchanges['binance'], pair, limit=100)
-                historical_data = add_features(historical_data)
-                if historical_data.empty:
-                    logging.warning(f"{pair}: Нет достаточно данных для расчёта индикаторов, пропускаем")
-                    continue
-                atr = historical_data.iloc[-1]['ATR']
-                can_trade_loss, reason_loss = await check_daily_loss_limit(exchanges['binance'], pair, balances, atr,
-                                                                           loss_model, loss_scaler)
-                can_trade_vol, reason_vol = await check_volatility(exchanges['binance'], pair, atr)
-                if not can_trade_loss:
-                    print(f"{pair}: Торговля остановлена до следующего дня: {reason_loss}")
-                    await send_telegram_message(f"{pair}: Торговля остановлена до следующего дня: {reason_loss}")
-                    continue
-                if not can_trade_vol:
-                    print(f"{pair}: Торговля приостановлена: {reason_vol}")
-                    await send_telegram_message(f"{pair}: Торговля приостановлена: {reason_vol}")
-                    continue
-                if len(open_orders[pair]) >= MAX_OPEN_ORDERS:
-                    print(f"{pair}: Достигнут лимит открытых ордеров ({MAX_OPEN_ORDERS})")
-                    await send_telegram_message(f"{pair}: Достигнут лимит открытых ордеров ({MAX_OPEN_ORDERS})")
-                    continue
-                tasks.append(
-                    trade_pair(exchanges, pair, balances, pred_model, scaler, fees, atr, loss_model, loss_scaler,
-                               open_orders))
-            await asyncio.gather(*tasks)
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, lambda: asyncio.create_task(shutdown(exchanges, balances, open_orders)))
 
-            iteration += 1
-            print(f"Итерация {iteration} завершена")
-            logging.info(f"Конец итерации {iteration}")
+        iteration = 0
+        while running and iteration < 10:
+            try:
+                logging.info(f"Начало итерации {iteration + 1}")
+                can_trade_drawdown, reason_drawdown = check_drawdown(balances)
+                if not can_trade_drawdown:
+                    print(f"Торговля остановлена: {reason_drawdown}")
+                    await send_telegram_message(f"Торговля остановлена: {reason_drawdown}")
+                    break
 
-        except Exception as e:
-            logging.error(f"Ошибка: {str(e)}")
-            await asyncio.sleep(10)
+                logging.info("Вызов select_profitable_pairs")
+                profitable_pairs = await select_profitable_pairs(exchanges, fees, pred_model, scaler, balances)
+                logging.info(f"Выбраны пары: {profitable_pairs} с лимитом {MAX_OPEN_ORDERS}")
+                await send_telegram_message(
+                    f"Выбраны пары для торговли: {profitable_pairs} с лимитом {MAX_OPEN_ORDERS}")
 
-        await asyncio.sleep(300)
+                tasks = []
+                for pair in profitable_pairs:
+                    historical_data = await get_historical_data(exchanges['binance'], pair, limit=100)
+                    historical_data = add_features(historical_data)
+                    if historical_data.empty:
+                        logging.warning(f"{pair}: Нет достаточно данных для расчёта индикаторов, пропускаем")
+                        continue
+                    atr = historical_data.iloc[-1]['ATR']
+                    can_trade_loss, reason_loss = await check_daily_loss_limit(exchanges['binance'], pair, balances,
+                                                                               atr, loss_model, loss_scaler)
+                    can_trade_vol, reason_vol = await check_volatility(exchanges['binance'], pair, atr)
+                    if not can_trade_loss:
+                        print(f"{pair}: Торговля остановлена до следующего дня: {reason_loss}")
+                        await send_telegram_message(f"{pair}: Торговля остановлена до следующего дня: {reason_loss}")
+                        continue
+                    if not can_trade_vol:
+                        print(f"{pair}: Торговля приостановлена: {reason_vol}")
+                        await send_telegram_message(f"{pair}: Торговля приостановлена: {reason_vol}")
+                        continue
+                    if len(open_orders[pair]) >= MAX_OPEN_ORDERS:
+                        print(f"{pair}: Достигнут лимит открытых ордеров ({MAX_OPEN_ORDERS})")
+                        await send_telegram_message(f"{pair}: Достигнут лимит открытых ордеров ({MAX_OPEN_ORDERS})")
+                        continue
+                    tasks.append(
+                        trade_pair(exchanges, pair, balances, pred_model, scaler, fees, atr, loss_model, loss_scaler,
+                                   open_orders))
+                await asyncio.gather(*tasks)
 
-    if not running:
-        await shutdown(exchanges, balances, open_orders)
+                iteration += 1
+                print(f"Итерация {iteration} завершена")
+                logging.info(f"Конец итерации {iteration}")
 
-    await exchanges['binance'].close()
+            except Exception as e:
+                logging.error(f"Ошибка в цикле итерации: {str(e)}")
+                await asyncio.sleep(10)
+
+            await asyncio.sleep(300)
+
+        if not running:
+            await shutdown(exchanges, balances, open_orders)
+
+    except Exception as e:
+        logging.error(f"Критическая ошибка в main: {str(e)}")
+        raise
+    finally:
+        logging.info("Закрытие соединения с Binance")
+        await exchanges['binance'].close()
 
 
 if __name__ == "__main__":
