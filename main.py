@@ -85,38 +85,38 @@ async def main():
 
                 logging.info("Вызов select_profitable_pairs")
                 profitable_pairs = await select_profitable_pairs(exchanges, fees, pred_model, scaler, balances)
-                logging.info(f"Выбраны пары: {profitable_pairs} с лимитом {MAX_OPEN_ORDERS}")
+                logging.info(f"Выбраны пары: {[pair[0] for pair in profitable_pairs]} с лимитом {MAX_OPEN_ORDERS}")
                 await send_telegram_message(
-                    f"Выбраны пары для торговли: {profitable_pairs} с лимитом {MAX_OPEN_ORDERS}")
+                    f"Выбраны пары для торговли: {[pair[0] for pair in profitable_pairs]} с лимитом {MAX_OPEN_ORDERS}")
 
                 tasks = []
-                for pair in profitable_pairs:
-                    historical_data = await get_historical_data(exchanges['binance'], pair, limit=100)
+                for pair_data in profitable_pairs:
+                    historical_data = await get_historical_data(exchanges['binance'], pair_data[0], limit=100)
                     historical_data = add_features(historical_data)
                     if historical_data.empty:
-                        logging.warning(f"{pair}: Нет достаточно данных для расчёта индикаторов, пропускаем")
+                        logging.warning(f"{pair_data[0]}: Нет достаточно данных для расчёта индикаторов, пропускаем")
                         continue
                     atr = historical_data.iloc[-1]['ATR']
-                    can_trade_loss, reason_loss = await check_daily_loss_limit(exchanges['binance'], pair, balances,
-                                                                               atr, loss_model, loss_scaler)
-                    can_trade_vol, reason_vol = await check_volatility(exchanges['binance'], pair, atr)
+                    can_trade_loss, reason_loss = await check_daily_loss_limit(exchanges['binance'], pair_data[0],
+                                                                               balances, atr, loss_model, loss_scaler)
+                    can_trade_vol, reason_vol = await check_volatility(exchanges['binance'], pair_data[0], atr)
                     if not can_trade_loss:
-                        print(f"{pair}: Торговля остановлена до следующего дня: {reason_loss}")
-                        await send_telegram_message(f"{pair}: Торговля остановлена до следующего дня: {reason_loss}")
+                        print(f"{pair_data[0]}: Торговля остановлена до следующего дня: {reason_loss}")
+                        await send_telegram_message(
+                            f"{pair_data[0]}: Торговля остановлена до следующего дня: {reason_loss}")
                         continue
                     if not can_trade_vol:
-                        print(f"{pair}: Торговля приостановлена: {reason_vol}")
-                        await send_telegram_message(f"{pair}: Торговля приостановлена: {reason_vol}")
+                        print(f"{pair_data[0]}: Торговля приостановлена: {reason_vol}")
+                        await send_telegram_message(f"{pair_data[0]}: Торговля приостановлена: {reason_vol}")
                         continue
-                    if len(open_orders[pair]) >= MAX_OPEN_ORDERS:
-                        print(f"{pair}: Достигнут лимит открытых ордеров ({MAX_OPEN_ORDERS})")
-                        await send_telegram_message(f"{pair}: Достигнут лимит открытых ордеров ({MAX_OPEN_ORDERS})")
+                    if len(open_orders[pair_data[0]]) >= MAX_OPEN_ORDERS:
+                        print(f"{pair_data[0]}: Достигнут лимит открытых ордеров ({MAX_OPEN_ORDERS})")
+                        await send_telegram_message(
+                            f"{pair_data[0]}: Достигнут лимит открытых ордеров ({MAX_OPEN_ORDERS})")
                         continue
-                    tasks.append(
-                        trade_pair(exchanges, pair, balances, pred_model, scaler, fees, atr, loss_model, loss_scaler,
-                                   open_orders))
+                    tasks.append(trade_pair(exchanges, pair_data, balances, pred_model, scaler, fees, atr, loss_model,
+                                            loss_scaler, open_orders))
 
-                # Ждём завершения всех задач перед паузой
                 if tasks:
                     await asyncio.gather(*tasks, return_exceptions=True)
 

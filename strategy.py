@@ -54,7 +54,7 @@ async def select_profitable_pairs(exchanges, fees, pred_model, scaler, balances)
             continue
 
     profitable_pairs.sort(key=lambda x: x[1], reverse=True)
-    selected_pairs = [pair[0] for pair in profitable_pairs[:MAX_OPEN_ORDERS]]
+    selected_pairs = [(pair[0], pair[3]) for pair in profitable_pairs[:MAX_OPEN_ORDERS]]  # Передаем prediction
 
     if not selected_pairs:
         logging.info("Нет прибыльных пар, баланс остаётся неизменным")
@@ -62,8 +62,8 @@ async def select_profitable_pairs(exchanges, fees, pred_model, scaler, balances)
         total_binance = sum(balance['quote_binance'] for balance in balances.values())
         total_bingx = sum(balance['quote_bingx'] for balance in balances.values())
         for pair in TRADING_PAIRS:
-            if pair in selected_pairs:
-                rank = selected_pairs.index(pair) + 1
+            if pair in [p[0] for p in selected_pairs]:
+                rank = [p[0] for p in selected_pairs].index(pair) + 1
                 weight = 1 / rank
                 total_weight = sum(1 / (i + 1) for i in range(len(selected_pairs)))
                 balances[pair]['quote_binance'] = total_binance * (weight / total_weight)
@@ -76,7 +76,8 @@ async def select_profitable_pairs(exchanges, fees, pred_model, scaler, balances)
     return selected_pairs
 
 
-async def trade_pair(exchanges, pair, balances, model, scaler, fees, atr, loss_model, loss_scaler, open_orders):
+async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, loss_model, loss_scaler, open_orders):
+    pair, prediction = pair_data  # Получаем pair и prediction из selected_pairs
     await check_and_cancel_orders(exchanges['binance'], pair, balances, atr, open_orders)
 
     binance_order_book = await get_order_book(exchanges['binance'], pair)
@@ -91,11 +92,7 @@ async def trade_pair(exchanges, pair, balances, model, scaler, fees, atr, loss_m
     balance_quote_binance = balances[pair]['quote_binance']
     entry_price = balances[pair]['entry_price']
 
-    prediction_data = await get_historical_data(exchanges['binance'], pair, limit=LOOKBACK + 100)
-    prediction_data = add_features(prediction_data)
-    X, _, pred_scaler = prepare_lstm_data(prediction_data)
-    prediction = model.predict(X[-1:], verbose=0)[0][0]
-    prob = prediction
+    prob = prediction  # Используем предсказание из select_profitable_pairs
 
     logging.info(
         f"{pair}: Проверка условий торговли: prob={prob:.6f}, MAX_PROB={MAX_PROB}, balance_quote_binance={balance_quote_binance:.2f}, MIN_ORDER_SIZE={MIN_ORDER_SIZE}")
@@ -104,17 +101,18 @@ async def trade_pair(exchanges, pair, balances, model, scaler, fees, atr, loss_m
     fixed_stop_loss = entry_price * (1 - FIXED_STOP_LOSS) if entry_price else 0
 
     if prob > MAX_PROB and balance_quote_binance > MIN_ORDER_SIZE:
-        # Устанавливаем минимальную сумму сделки 10 USDT и корректируем amount
-        min_notional = 10.0  # Минимальная сумма сделки в USDT
+        min_notional = 10.0
         amount = max(min_notional / binance_bid, balance_quote_binance * 1.0 / binance_bid, binance_bid_amount)
         if pair == 'XRP/USDT':
-            amount = max(amount, 1.0)  # Минимальное количество для XRP
+            amount = max(amount, 1.0)
         elif pair == 'ETH/USDT':
-            amount = max(amount, 0.01)  # Минимальное количество для ETH
+            amount = max(amount, 0.01)
         elif pair == 'BNB/USDT':
-            amount = max(amount, 0.1)  # Минимальное количество для BNB
+            amount = max(amount, 0.1)
         elif pair == 'ADA/USDT':
-            amount = max(amount, 10.0)  # Минимальное количество для ADA
+            amount = max(amount, 10.0)
+        elif pair == 'DOGE/USDT':
+            amount = max(amount, 100.0)  # Минимальное количество для DOGE
         logging.info(
             f"{pair}: Рассчитан amount={amount:.6f} для покупки, bid={binance_bid}, balance_quote_binance={balance_quote_binance}")
         order = await manage_request(exchanges['binance'], 'create_limit_buy_order', pair, amount, binance_bid)

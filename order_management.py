@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import logging
+import asyncio
 from exchange import send_telegram_message
 
 
@@ -14,7 +15,7 @@ async def check_and_cancel_orders(exchange, symbol, balances, atr, open_orders):
     for i, order in enumerate(open_orders[symbol]):
         try:
             order_info = await exchange.fetch_order(order['id'], symbol)
-            if order_info and order_info['status'] == 'closed':
+            if order_info is not None and order_info['status'] == 'closed':
                 if order['side'] == 'buy':
                     balances[symbol][balance_key] -= order_info['filled'] * order_info['price'] + order_info['fee'][
                         'cost']
@@ -28,6 +29,9 @@ async def check_and_cancel_orders(exchange, symbol, balances, atr, open_orders):
                 daily_losses[symbol] += order_info['fee']['cost']
                 orders_to_remove.append(i)
                 logging.info(f"{symbol}: Ордер {order['id']} закрыт, статус: {order_info['status']}")
+            elif order_info is None:
+                logging.warning(f"{symbol}: Ордер {order['id']} не найден на бирже")
+                orders_to_remove.append(i)
         except Exception as e:
             logging.error(f"Ошибка проверки ордера {order['id']}: {str(e)}")
 
