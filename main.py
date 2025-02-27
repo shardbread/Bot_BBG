@@ -54,7 +54,8 @@ async def main():
 
         loss_data = await get_historical_data(exchanges['binance'], 'ETH/USDT', limit=2000)
         loss_data = add_features(loss_data)
-        X_loss, y_loss, loss_scaler = prepare_gru_data(loss_data, [0] * 38)
+        X_loss, y_loss, loss_scaler = prepare_gru_data(loss_data)  # Убираем [0] * 38
+        logging.info(f"Обучение GRU-модели с X_loss.shape={X_loss.shape}, y_loss.shape={y_loss.shape}")
         loss_model = train_gru_model(X_loss, y_loss)
 
         balances = {}
