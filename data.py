@@ -57,10 +57,15 @@ def prepare_lstm_data(df, lookback=60):
     logging.info(f"Подготовлены данные для LSTM: X.shape={X.shape}, y.mean={y.mean():.4f}")
     return X, y, scaler
 
-def prepare_gru_data(df, loss_thresholds):
+def prepare_gru_data(df, lookback=38):
     scaler = MinMaxScaler()
     features = ['MA10', 'MA50', 'RSI', 'MACD', 'MACD_signal', 'BB_upper', 'BB_lower', 'close', 'ATR']
     X_data = scaler.fit_transform(df[features])
-    X = np.array([X_data[i:i+38] for i in range(len(X_data)-38)])
-    y = np.array(loss_thresholds)
+    y_data = df['Target'].values
+    X, y = [], []
+    for i in range(lookback, len(X_data)):
+        X.append(X_data[i-lookback:i])
+        y.append(y_data[i])
+    X, y = np.array(X), np.array(y)
+    logging.info(f"Подготовлены данные для GRU: X.shape={X.shape}, y.mean={y.mean():.4f}")
     return X, y, scaler
