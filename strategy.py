@@ -32,7 +32,7 @@ async def select_profitable_pairs(exchanges, fees, pred_model, scaler, balances)
                                                                             binance_ask) if bingx_bid < binance_ask else 0
             max_spread = max(spread_buy_binance_sell_bingx, spread_buy_bingx_sell_binance)
 
-            min_spread = 0.0001  # Уменьшено для Testnet
+            min_spread = 0.0001
 
             prediction_data = await get_historical_data(exchanges['binance'], pair, limit=LOOKBACK + 100)
             prediction_data = add_features(prediction_data)
@@ -101,7 +101,10 @@ async def trade_pair(exchanges, pair, balances, model, scaler, fees, atr, loss_m
     fixed_stop_loss = entry_price * (1 - FIXED_STOP_LOSS) if entry_price else 0
 
     if prob > MAX_PROB and balance_quote_binance > MIN_ORDER_SIZE:
-        amount = min(balance_quote_binance * 0.1 / binance_bid, balance_quote_binance / binance_bid, binance_bid_amount)
+        amount = min(balance_quote_binance * 1.0 / binance_bid, balance_quote_binance / binance_bid,
+                     binance_bid_amount)  # Увеличено с 0.1 до 1.0
+        logging.info(
+            f"{pair}: Рассчитан amount={amount:.6f} для покупки, bid={binance_bid}, balance_quote_binance={balance_quote_binance}")
         order = await manage_request(exchanges['binance'], 'create_limit_buy_order', pair, amount, binance_bid)
         open_orders[pair].append({'id': order['id'], 'timestamp': time.time(), 'side': 'buy', 'amount': amount})
         balances[pair]['entry_price'] = binance_bid
@@ -113,7 +116,9 @@ async def trade_pair(exchanges, pair, balances, model, scaler, fees, atr, loss_m
 
     elif balance_base > 0:
         if prob < MAX_PROB:
-            amount = min(balance_base * 0.1, balance_base, binance_ask_amount)
+            amount = min(balance_base * 1.0, balance_base, binance_ask_amount)  # Увеличено с 0.1 до 1.0
+            logging.info(
+                f"{pair}: Рассчитан amount={amount:.6f} для продажи, ask={binance_ask}, balance_base={balance_base}")
             order = await manage_request(exchanges['binance'], 'create_limit_sell_order', pair, amount, binance_ask)
             open_orders[pair].append({'id': order['id'], 'timestamp': time.time(), 'side': 'sell', 'amount': amount})
             balances[pair]['quote_binance'] += amount * binance_ask
