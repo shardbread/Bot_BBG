@@ -18,6 +18,7 @@ LOOKBACK = 28
 SEQUENCE_LENGTH = 10
 INITIAL_BALANCE = 228.0
 MIN_ORDER_SIZE = 10.0
+MIN_SELL_SIZE = 20.0  # Увеличенный порог для продажи остатков
 MAX_PREDICTION = 0.05
 MAX_PROB = 0.25  # Снижено с 0.3 до 0.25 для охвата всех пар
 

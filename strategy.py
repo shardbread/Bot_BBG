@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-from config import FIXED_STOP_LOSS, MIN_ORDER_SIZE, TRADING_PAIRS, LOOKBACK, MAX_PREDICTION, MAX_PROB
+import asyncio
+
+from config import FIXED_STOP_LOSS, MIN_ORDER_SIZE, TRADING_PAIRS, LOOKBACK, MAX_PREDICTION, MAX_PROB, MIN_SELL_SIZE
 from data import get_historical_data, prepare_lstm_data, add_features
 from exchange import get_ticker, manage_request, send_telegram_message
 from order_management import check_and_cancel_orders
@@ -132,29 +134,26 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
             logging.warning(
                 f"{pair}: Недостаточно баланса для покупки: требуется {required_balance:.2f}, доступно {balance_quote_binance:.2f}")
 
-    # Продажа остатков базового актива, если сумма >= MIN_ORDER_SIZE
-    if balance_base > 0 and balance_base * binance_ask >= MIN_ORDER_SIZE:
-        if prob < MAX_PROB:
-            amount = min(balance_base, binance_ask_amount)
-            logging.info(
-                f"{pair}: Рассчитан amount={amount:.6f} для продажи, ask={binance_ask}, balance_base={balance_base}")
+    # Ожидание закрытия всех ордеров перед продажей остатков
+    await asyncio.sleep(2)  # Даём время для обновления статуса ордеров
+    await check_and_cancel_orders(exchanges['binance'], pair, balances, atr, open_orders)
+
+    # Продажа остатков базового актива, если сумма >= MIN_SELL_SIZE
+    balance_base = balances[pair]['base']
+    if balance_base > 0 and balance_base * binance_ask >= MIN_SELL_SIZE:
+        amount = min(balance_base, binance_ask_amount)
+        logging.info(
+            f"{pair}: Рассчитан amount={amount:.6f} для продажи остатков, ask={binance_ask}, balance_base={balance_base}")
+        try:
             order = await manage_request(exchanges['binance'], 'create_limit_sell_order', pair, amount, binance_ask)
             open_orders[pair].append({'id': order['id'], 'timestamp': time.time(), 'side': 'sell', 'amount': amount})
             balances[pair]['quote_binance'] += amount * binance_ask
             balances[pair]['base'] -= amount
-            msg = f"{pair}: Выставлен ордер на продажу {amount:.4f} {base} на Binance по {binance_ask}, Уверенность: {prob:.2f}"
+            msg = f"{pair}: Выставлен ордер на продажу остатков {amount:.4f} {base} на Binance по {binance_ask}"
             logging.info(msg)
             await send_telegram_message(msg)
-        elif entry_price and (binance_ask < entry_price - atr_stop_loss or binance_ask < fixed_stop_loss):
-            stop_reason = "ATR" if binance_ask < entry_price - atr_stop_loss else "Fixed"
-            amount = min(balance_base, binance_ask_amount)
-            order = await manage_request(exchanges['binance'], 'create_limit_sell_order', pair, amount, binance_ask)
-            open_orders[pair].append({'id': order['id'], 'timestamp': time.time(), 'side': 'sell', 'amount': amount})
-            balances[pair]['quote_binance'] += amount * binance_ask
-            balances[pair]['base'] -= amount
-            msg = f"{pair}: Стоп-лосс ({stop_reason}): Выставлен ордер на продажу {amount:.4f} {base} на Binance по {binance_ask} (Entry: {entry_price:.2f}, ATR: {atr_stop_loss:.2f}, Fixed: {fixed_stop_loss:.2f})"
-            logging.info(msg)
-            await send_telegram_message(msg)
+        except Exception as e:
+            logging.error(f"{pair}: Ошибка продажи остатков: {str(e)}")
 
     from globals import daily_losses
     print(

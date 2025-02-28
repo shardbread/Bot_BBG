@@ -9,7 +9,7 @@ from exchange import connect_exchange, fetch_fees, send_telegram_message
 from data import get_historical_data, prepare_lstm_data, prepare_gru_data, add_features
 from model import train_lstm_model, train_gru_model
 from strategy import trade_pair, select_profitable_pairs
-from order_management import shutdown
+from order_management import shutdown, check_and_cancel_orders
 from limits import check_drawdown, check_daily_loss_limit, check_volatility
 from config import TRADING_PAIRS, INITIAL_BALANCE, MIN_ORDER_SIZE
 from globals import MAX_OPEN_ORDERS, daily_losses
@@ -39,16 +39,30 @@ async def log_balances(balances):
     logging.info(f"Текущий баланс: Total USDT: {total_binance:.2f}, Детали по парам: {balance_summary}")
 
 
-async def final_report(balances):
-    """Итоговый отчёт о прибыли/убытках."""
+async def final_report(exchanges, balances):
+    """Итоговый отчёт о прибыли/убытках с учётом остатков активов."""
     total_initial = 7537.93
-    total_final = sum(balance['quote_binance'] for balance in balances.values())
+    total_final_usdt = sum(balance['quote_binance'] for balance in balances.values())
     total_fees = sum(balance['total_fees'] for balance in balances.values())
+    total_assets_value = 0
+
+    for pair in balances:
+        if balances[pair]['base'] > 0:
+            order_book = await exchanges['binance'].fetch_order_book(pair)
+            ask_price = order_book['asks'][0][0]
+            asset_value = balances[pair]['base'] * ask_price
+            total_assets_value += asset_value
+            logging.info(
+                f"{pair}: Остатки {balances[pair]['base']:.4f} по цене {ask_price:.2f}, стоимость: {asset_value:.2f} USDT")
+
+    total_final = total_final_usdt + total_assets_value
     profit_loss = total_final - total_initial - total_fees
     logging.info(
-        f"Итоговый отчёт: Начальный баланс: {total_initial:.2f} USDT, Конечный баланс: {total_final:.2f} USDT, Комиссии: {total_fees:.2f} USDT, Прибыль/Убыток: {profit_loss:.2f} USDT")
+        f"Итоговый отчёт: Начальный баланс: {total_initial:.2f} USDT, Конечный баланс (USDT + активы): {total_final:.2f} USDT, Комиссии: {total_fees:.2f} USDT, Прибыль/Убыток: {profit_loss:.2f} USDT")
     for pair in balances:
-        pl = balances[pair]['quote_binance'] - (total_initial / len(TRADING_PAIRS)) - balances[pair]['total_fees']
+        pl = balances[pair]['quote_binance'] + (
+            balances[pair]['base'] * ask_price if balances[pair]['base'] > 0 else 0) - (
+                         total_initial / len(TRADING_PAIRS)) - balances[pair]['total_fees']
         logging.info(f"{pair}: Прибыль/Убыток: {pl:.2f} USDT, Комиссии: {balances[pair]['total_fees']:.2f} USDT")
 
 
@@ -116,6 +130,10 @@ async def main():
                     await send_telegram_message(f"Торговля остановлена: {reason_drawdown}")
                     break
 
+                # Синхронизация открытых ордеров перед итерацией
+                for pair in TRADING_PAIRS:
+                    await check_and_cancel_orders(exchanges['binance'], pair, balances, 0, open_orders)
+
                 # Динамический процент: от 5% до 1%
                 trade_fraction = 0.05 - (0.04 * iteration / (total_iterations - 1))
 
@@ -161,14 +179,14 @@ async def main():
                 print(f"Итерация {iteration} завершена")
                 logging.info(f"Конец итерации {iteration}")
 
-                await asyncio.sleep(10)  # Уменьшен интервал до 10 секунд
+                await asyncio.sleep(10)
 
             except Exception as e:
                 logging.error(f"Ошибка в цикле итерации: {str(e)}")
                 await asyncio.sleep(10)
 
         logging.info("Достигнута последняя итерация, завершаем работу")
-        await final_report(balances)
+        await final_report(exchanges, balances)
         await shutdown(exchanges, balances, open_orders)
 
     except Exception as e:
