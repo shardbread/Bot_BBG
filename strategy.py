@@ -100,10 +100,9 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
 
     if balance_quote_binance > MIN_ORDER_SIZE:
         min_notional = 10.0
-        amount = min(min_notional / binance_bid, balance_quote_binance * 0.5 / binance_bid,
-                     binance_bid_amount)  # Уменьшено до 50%
+        amount = max(min_notional / binance_bid, balance_quote_binance * 0.5 / binance_bid, binance_bid_amount)
         if pair == 'XRP/USDT':
-            amount = max(amount, 1.0)
+            amount = max(amount, 5.0)  # Увеличено до 5 XRP для NOTIONAL ≥ 10 USDT
         elif pair == 'ETH/USDT':
             amount = max(amount, 0.01)
         elif pair == 'BNB/USDT':
@@ -116,7 +115,7 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
             amount = max(amount, 0.001)
 
         required_balance = amount * binance_bid
-        if balance_quote_binance > required_balance:  # Изменено на > для запаса
+        if balance_quote_binance > required_balance:
             logging.info(
                 f"{pair}: Рассчитан amount={amount:.6f} для покупки, bid={binance_bid}, balance_quote_binance={balance_quote_binance}")
             order = await manage_request(exchanges['binance'], 'create_limit_buy_order', pair, amount, binance_bid)
