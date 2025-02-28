@@ -8,7 +8,7 @@ import signal
 from exchange import connect_exchange, fetch_fees, send_telegram_message
 from data import get_historical_data, prepare_lstm_data, prepare_gru_data, add_features
 from model import train_lstm_model, train_gru_model
-from strategy import trade_pair, select_profitable_pairs
+from strategy import trade_pair, select_profitable_pairs, finalize_report
 from order_management import shutdown, check_and_cancel_orders
 from limits import check_drawdown, check_daily_loss_limit, check_volatility
 from config import TRADING_PAIRS, INITIAL_BALANCE, MIN_ORDER_SIZE
@@ -188,6 +188,7 @@ async def main():
         logging.info("Достигнута последняя итерация, завершаем работу")
         await final_report(exchanges, balances)
         await shutdown(exchanges, balances, open_orders)
+        await finalize_report(exchanges, balances)
 
     except Exception as e:
         logging.error(f"Критическая ошибка в main: {str(e)}")

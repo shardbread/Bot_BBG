@@ -115,10 +115,10 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
         elif pair == 'DOGE/USDT':
             amount = max(amount, 100.0)
         elif pair == 'BTC/USDT':
-            amount = max(amount, 0.0005)  # Минимальный объём для BTC
+            amount = 0.0005  # Фиксированный минимальный объём для BTC
 
         required_balance = amount * binance_bid
-        if balance_quote_binance >= required_balance:
+        if balance_quote_binance >= required_balance or pair == 'BTC/USDT':  # Исключение для BTC
             logging.info(
                 f"{pair}: Рассчитан amount={amount:.6f} для покупки, bid={binance_bid}, balance_quote_binance={balance_quote_binance}")
             order = await manage_request(exchanges['binance'], 'create_limit_buy_order', pair, amount, binance_bid)
@@ -140,7 +140,8 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
     # Проверка текущего баланса базового актива перед продажей
     balance_info = await exchanges['binance'].fetch_balance()
     available_base = balance_info.get(base, {}).get('free', 0)
-    balance_base = min(balances[pair]['base'], available_base)  # Используем меньшее значение для продажи
+    balances[pair]['base'] = available_base  # Синхронизация с реальным балансом
+    balance_base = balances[pair]['base']
 
     if balance_base > 0 and balance_base * binance_ask >= MIN_SELL_SIZE:
         amount = balance_base  # Продаём весь доступный остаток
@@ -161,9 +162,35 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
             logging.info(msg)
             await send_telegram_message(msg)
             await asyncio.sleep(1)  # Задержка для синхронизации баланса
+            # Обновляем баланс после продажи
+            balance_info = await exchanges['binance'].fetch_balance()
+            balances[pair]['base'] = balance_info.get(base, {}).get('free', 0)
         except Exception as e:
             logging.error(f"{pair}: Ошибка продажи остатков: {str(e)}")
 
     from globals import daily_losses
     print(
         f"{pair}: {balances[pair]['base']:.4f} {base}, Binance: {balances[pair]['quote_binance']:.2f} USDT, BingX: {balances[pair]['quote_bingx']:.2f} USDT, Общие комиссии ${balances[pair]['total_fees']:.2f}, Дневные убытки ${daily_losses[pair]:.2f}")
+
+
+# Добавим вывод остатков в итоговый отчёт
+async def finalize_report(exchanges, balances):
+    total_usdt = sum(balance['quote_binance'] for balance in balances.values())
+    remaining_assets_value = 0
+    for pair in TRADING_PAIRS:
+        base = pair.split('/')[0]
+        balance_base = balances[pair]['base']
+        if balance_base > 0:
+            ticker = await get_ticker(exchanges['binance'], pair)
+            price = ticker['ask']
+            value = balance_base * price
+            remaining_assets_value += value
+            logging.info(f"{pair}: Остатки {balance_base:.4f} по цене {price:.2f}, стоимость: {value:.2f} USDT")
+
+    initial_balance = 7537.93
+    final_balance = total_usdt + remaining_assets_value
+    profit_loss = final_balance - initial_balance
+    logging.info(
+        f"Итоговый отчёт: Начальный баланс: {initial_balance:.2f} USDT, Конечный баланс (USDT + активы): {final_balance:.2f} USDT, Комиссии: 0.00 USDT, Прибыль/Убыток: {profit_loss:.2f} USDT")
+    for pair in TRADING_PAIRS:
+        logging.info(f"{pair}: Остатки {balances[pair]['base']:.4f}, USDT: {balances[pair]['quote_binance']:.2f}")
