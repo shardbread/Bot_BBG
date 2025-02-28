@@ -70,10 +70,12 @@ async def main():
 
         balances = {}
         open_orders = defaultdict(list)
+        total_initial_balance = 7537.93  # Полный Testnet баланс
+        initial_allocation = total_initial_balance / len(TRADING_PAIRS)
         for pair in TRADING_PAIRS:
             balances[pair] = {
                 'base': 0.0,
-                'quote_binance': 128.0,  # Начальный баланс для каждой пары
+                'quote_binance': initial_allocation,  # Распределяем весь баланс
                 'quote_bingx': 100.0,
                 'entry_price': None,
                 'total_fees': 0.0
@@ -87,7 +89,6 @@ async def main():
         while running and iteration < 10:
             try:
                 logging.info(f"Начало итерации {iteration + 1}")
-                # Мониторинг баланса перед итерацией
                 await log_balances(balances)
                 total_binance = sum(balance['quote_binance'] for balance in balances.values())
                 if total_binance < MIN_ORDER_SIZE:

@@ -100,9 +100,10 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
 
     if balance_quote_binance > MIN_ORDER_SIZE:
         min_notional = 10.0
-        amount = max(min_notional / binance_bid, balance_quote_binance * 0.5 / binance_bid, binance_bid_amount)
+        amount = max(min_notional / binance_bid, balance_quote_binance * 0.1 / binance_bid,
+                     binance_bid_amount)  # Уменьшено до 10%
         if pair == 'XRP/USDT':
-            amount = max(amount, 5.0)  # Увеличено до 5 XRP для NOTIONAL ≥ 10 USDT
+            amount = max(amount, 5.0)
         elif pair == 'ETH/USDT':
             amount = max(amount, 0.01)
         elif pair == 'BNB/USDT':
