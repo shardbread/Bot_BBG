@@ -118,7 +118,7 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
             amount = 0.0005  # Фиксированный минимальный объём для BTC
 
         required_balance = amount * binance_bid
-        if balance_quote_binance >= required_balance:
+        if balance_quote_binance >= required_balance and balance_base + amount >= 0:  # Проверка на отрицательный остаток
             logging.info(
                 f"{pair}: Рассчитан amount={amount:.6f} для покупки, bid={binance_bid}, balance_quote_binance={balance_quote_binance}")
             order = await manage_request(exchanges['binance'], 'create_limit_buy_order', pair, amount, binance_bid)
@@ -126,23 +126,26 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
             balances[pair]['entry_price'] = binance_bid
             balances[pair]['quote_binance'] -= amount * binance_bid
             balances[pair]['base'] += amount
+            balances[pair]['cost'] = balances[pair].get('cost', 0) + amount * binance_bid  # Учёт затрат
             msg = f"{pair}: Выставлен ордер на покупку {amount:.4f} {base} на Binance по {binance_bid}, Уверенность: {prob:.2f}"
             logging.info(msg)
             await send_telegram_message(msg)
         else:
             logging.warning(
-                f"{pair}: Недостаточно баланса для покупки: требуется {required_balance:.2f}, доступно {balance_quote_binance:.2f}")
+                f"{pair}: Недостаточно баланса для покупки: требуется {required_balance:.2f}, доступно {balance_quote_binance:.2f} или остаток станет отрицательным")
 
     # Ожидание закрытия всех ордеров перед продажей остатков
     await asyncio.sleep(3)
     await check_and_cancel_orders(exchanges['binance'], pair, balances, atr, open_orders)
 
-    # Продажа остатков только из внутреннего учёта
-    balance_base = balances[pair]['base']
+    # Проверка реального баланса перед продажей
+    balance_info = await exchanges['binance'].fetch_balance()
+    available_base = balance_info.get(base, {}).get('free', 0)
+    balance_base = min(balances[pair]['base'], available_base)  # Используем меньшее значение
     if balance_base > 0 and balance_base * binance_ask >= MIN_SELL_SIZE:
-        amount = balance_base  # Продаём весь доступный остаток
+        amount = balance_base
         logging.info(
-            f"{pair}: Рассчитан amount={amount:.6f} для продажи остатков, ask={binance_ask}, balance_base={balance_base}")
+            f"{pair}: Рассчитан amount={amount:.6f} для продажи остатков, ask={binance_ask}, balance_base={balance_base}, available_base={available_base}")
         try:
             order = await manage_request(exchanges['binance'], 'create_market_sell_order', pair, amount)
             open_orders[pair].append({'id': order['id'], 'timestamp': time.time(), 'side': 'sell', 'amount': amount})
@@ -151,12 +154,13 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
             sold_value = filled_amount * filled_price
             balances[pair]['quote_binance'] += sold_value
             balances[pair]['base'] -= filled_amount
+            balances[pair]['revenue'] = balances[pair].get('revenue', 0) + sold_value  # Учёт доходов
             if balances[pair]['base'] < 0:
-                balances[pair]['base'] = 0.0  # Исправляем отрицательный остаток
+                balances[pair]['base'] = 0.0
             msg = f"{pair}: Выставлен рыночный ордер на продажу остатков {filled_amount:.4f} {base} по {filled_price:.2f}, получено {sold_value:.2f} USDT"
             logging.info(msg)
             await send_telegram_message(msg)
-            await asyncio.sleep(1)  # Задержка для синхронизации
+            await asyncio.sleep(1)
         except Exception as e:
             logging.error(f"{pair}: Ошибка продажи остатков: {str(e)}")
 
@@ -171,7 +175,7 @@ async def finalize_report(exchanges, balances):
     for pair in TRADING_PAIRS:
         base = pair.split('/')[0]
         balance_base = balances[pair]['base']
-        if balance_base != 0:  # Учитываем как положительные, так и отрицательные остатки
+        if balance_base != 0:
             ticker = await get_ticker(exchanges['binance'], pair)
             price = ticker['ask']
             value = balance_base * price
@@ -184,4 +188,10 @@ async def finalize_report(exchanges, balances):
     logging.info(
         f"Итоговый отчёт: Начальный баланс: {initial_balance:.2f} USDT, Конечный баланс (USDT + активы): {final_balance:.2f} USDT, Комиссии: 0.00 USDT, Прибыль/Убыток: {profit_loss:.2f} USDT")
     for pair in TRADING_PAIRS:
-        logging.info(f"{pair}: Остатки {balances[pair]['base']:.4f}, USDT: {balances[pair]['quote_binance']:.2f}")
+        cost = balances[pair].get('cost', 0)
+        revenue = balances[pair].get('revenue', 0)
+        pair_profit_loss = revenue - cost + (
+            balances[pair]['base'] * (await get_ticker(exchanges['binance'], pair))['ask'] if balances[pair][
+                                                                                                  'base'] != 0 else 0)
+        logging.info(
+            f"{pair}: Остатки {balances[pair]['base']:.4f}, USDT: {balances[pair]['quote_binance']:.2f}, Прибыль/Убыток: {pair_profit_loss:.2f} USDT")
