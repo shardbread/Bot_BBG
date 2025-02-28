@@ -29,6 +29,16 @@ logging.basicConfig(
 running = True
 
 
+async def log_balances(balances):
+    """Вывод текущего баланса в лог."""
+    total_binance = max(sum(balance['quote_binance'] for balance in balances.values()), 0)
+    balance_summary = {pair: {
+        'base': balances[pair]['base'],
+        'quote_binance': balances[pair]['quote_binance']
+    } for pair in balances}
+    logging.info(f"Текущий баланс: Total USDT: {total_binance:.2f}, Детали по парам: {balance_summary}")
+
+
 async def main():
     global running
     logging.info("Запуск скрипта")
@@ -63,7 +73,7 @@ async def main():
         for pair in TRADING_PAIRS:
             balances[pair] = {
                 'base': 0.0,
-                'quote_binance': 128.0,
+                'quote_binance': 128.0,  # Начальный баланс для каждой пары
                 'quote_bingx': 100.0,
                 'entry_price': None,
                 'total_fees': 0.0
@@ -77,6 +87,14 @@ async def main():
         while running and iteration < 10:
             try:
                 logging.info(f"Начало итерации {iteration + 1}")
+                # Мониторинг баланса перед итерацией
+                await log_balances(balances)
+                total_binance = sum(balance['quote_binance'] for balance in balances.values())
+                if total_binance < MIN_ORDER_SIZE:
+                    logging.warning(
+                        f"Общий баланс USDT ({total_binance:.2f}) ниже минимального ({MIN_ORDER_SIZE}). Остановка торговли.")
+                    break
+
                 can_trade_drawdown, reason_drawdown = check_drawdown(balances)
                 if not can_trade_drawdown:
                     print(f"Торговля остановлена: {reason_drawdown}")
@@ -84,11 +102,6 @@ async def main():
                     break
 
                 logging.info("Вызов select_profitable_pairs")
-                total_binance = sum(balance['quote_binance'] for balance in balances.values())
-                if total_binance < MIN_ORDER_SIZE:
-                    logging.warning(
-                        f"Общий баланс USDT ({total_binance:.2f}) ниже минимального ({MIN_ORDER_SIZE}). Остановка торговли.")
-                    break
                 profitable_pairs = await select_profitable_pairs(exchanges, fees, pred_model, scaler, balances)
                 logging.info(f"Выбраны пары: {[pair[0] for pair in profitable_pairs]} с лимитом {MAX_OPEN_ORDERS}")
                 await send_telegram_message(
@@ -121,10 +134,10 @@ async def main():
                         continue
                     task = trade_pair(exchanges, pair_data, balances, pred_model, scaler, fees, atr, loss_model,
                                       loss_scaler, open_orders)
-                    tasks.append(asyncio.ensure_future(task))  # Явно создаём задачи
+                    tasks.append(asyncio.ensure_future(task))
 
                 if tasks:
-                    await asyncio.wait(tasks, return_when=asyncio.ALL_COMPLETED)  # Ждём завершения всех задач
+                    await asyncio.wait(tasks, return_when=asyncio.ALL_COMPLETED)
 
                 iteration += 1
                 print(f"Итерация {iteration} завершена")
