@@ -12,7 +12,7 @@ from strategy import trade_pair, select_profitable_pairs
 from order_management import shutdown
 from limits import check_drawdown, check_daily_loss_limit, check_volatility
 from config import TRADING_PAIRS, INITIAL_BALANCE, MIN_ORDER_SIZE
-from globals import MAX_OPEN_ORDERS
+from globals import MAX_OPEN_ORDERS, daily_losses
 import logging
 from collections import defaultdict
 
@@ -37,6 +37,19 @@ async def log_balances(balances):
         'quote_binance': balances[pair]['quote_binance']
     } for pair in balances}
     logging.info(f"Текущий баланс: Total USDT: {total_binance:.2f}, Детали по парам: {balance_summary}")
+
+
+async def final_report(balances):
+    """Итоговый отчёт о прибыли/убытках."""
+    total_initial = 7537.93
+    total_final = sum(balance['quote_binance'] for balance in balances.values())
+    total_fees = sum(balance['total_fees'] for balance in balances.values())
+    profit_loss = total_final - total_initial - total_fees
+    logging.info(
+        f"Итоговый отчёт: Начальный баланс: {total_initial:.2f} USDT, Конечный баланс: {total_final:.2f} USDT, Комиссии: {total_fees:.2f} USDT, Прибыль/Убыток: {profit_loss:.2f} USDT")
+    for pair in balances:
+        pl = balances[pair]['quote_binance'] - (total_initial / len(TRADING_PAIRS)) - balances[pair]['total_fees']
+        logging.info(f"{pair}: Прибыль/Убыток: {pl:.2f} USDT, Комиссии: {balances[pair]['total_fees']:.2f} USDT")
 
 
 async def main():
@@ -70,12 +83,12 @@ async def main():
 
         balances = {}
         open_orders = defaultdict(list)
-        total_initial_balance = 7537.93  # Полный Testnet баланс
+        total_initial_balance = 7537.93
         initial_allocation = total_initial_balance / len(TRADING_PAIRS)
         for pair in TRADING_PAIRS:
             balances[pair] = {
                 'base': 0.0,
-                'quote_binance': initial_allocation,  # Распределяем весь баланс
+                'quote_binance': initial_allocation,
                 'quote_bingx': 100.0,
                 'entry_price': None,
                 'total_fees': 0.0
@@ -86,7 +99,8 @@ async def main():
             loop.add_signal_handler(sig, lambda: asyncio.create_task(shutdown(exchanges, balances, open_orders)))
 
         iteration = 0
-        while running and iteration < 10:
+        total_iterations = 10
+        while running and iteration < total_iterations:
             try:
                 logging.info(f"Начало итерации {iteration + 1}")
                 await log_balances(balances)
@@ -101,6 +115,9 @@ async def main():
                     print(f"Торговля остановлена: {reason_drawdown}")
                     await send_telegram_message(f"Торговля остановлена: {reason_drawdown}")
                     break
+
+                # Динамический процент: от 5% до 1%
+                trade_fraction = 0.05 - (0.04 * iteration / (total_iterations - 1))
 
                 logging.info("Вызов select_profitable_pairs")
                 profitable_pairs = await select_profitable_pairs(exchanges, fees, pred_model, scaler, balances)
@@ -134,7 +151,7 @@ async def main():
                             f"{pair_data[0]}: Достигнут лимит открытых ордеров ({MAX_OPEN_ORDERS})")
                         continue
                     task = trade_pair(exchanges, pair_data, balances, pred_model, scaler, fees, atr, loss_model,
-                                      loss_scaler, open_orders)
+                                      loss_scaler, open_orders, trade_fraction)
                     tasks.append(asyncio.ensure_future(task))
 
                 if tasks:
@@ -144,13 +161,14 @@ async def main():
                 print(f"Итерация {iteration} завершена")
                 logging.info(f"Конец итерации {iteration}")
 
-                await asyncio.sleep(30)
+                await asyncio.sleep(10)  # Уменьшен интервал до 10 секунд
 
             except Exception as e:
                 logging.error(f"Ошибка в цикле итерации: {str(e)}")
                 await asyncio.sleep(10)
 
         logging.info("Достигнута последняя итерация, завершаем работу")
+        await final_report(balances)
         await shutdown(exchanges, balances, open_orders)
 
     except Exception as e:

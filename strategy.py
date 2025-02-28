@@ -19,7 +19,7 @@ async def select_profitable_pairs(exchanges, fees, pred_model, scaler, balances)
     for pair in TRADING_PAIRS:
         try:
             binance_ticker = await get_ticker(exchanges['binance'], pair)
-            bingx_ticker = binance_ticker  # Заглушка для теста
+            bingx_ticker = binance_ticker
 
             binance_bid = binance_ticker['bid']
             binance_ask = binance_ticker['ask']
@@ -74,7 +74,8 @@ async def select_profitable_pairs(exchanges, fees, pred_model, scaler, balances)
     return selected_pairs
 
 
-async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, loss_model, loss_scaler, open_orders):
+async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, loss_model, loss_scaler, open_orders,
+                     trade_fraction):
     pair, prediction = pair_data
     await check_and_cancel_orders(exchanges['binance'], pair, balances, atr, open_orders)
 
@@ -100,8 +101,8 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
 
     if balance_quote_binance > MIN_ORDER_SIZE:
         min_notional = 10.0
-        amount = max(min_notional / binance_bid, balance_quote_binance * 0.05 / binance_bid,
-                     binance_bid_amount)  # Уменьшено до 5%
+        amount = max(min_notional / binance_bid, balance_quote_binance * trade_fraction / binance_bid,
+                     binance_bid_amount)
         if pair == 'XRP/USDT':
             amount = max(amount, 5.0)
         elif pair == 'ETH/USDT':
@@ -131,9 +132,10 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
             logging.warning(
                 f"{pair}: Недостаточно баланса для покупки: требуется {required_balance:.2f}, доступно {balance_quote_binance:.2f}")
 
-    elif balance_base > 0:
+    # Продажа остатков базового актива, если сумма >= MIN_ORDER_SIZE
+    if balance_base > 0 and balance_base * binance_ask >= MIN_ORDER_SIZE:
         if prob < MAX_PROB:
-            amount = min(balance_base * 1.0, balance_base, binance_ask_amount)
+            amount = min(balance_base, binance_ask_amount)
             logging.info(
                 f"{pair}: Рассчитан amount={amount:.6f} для продажи, ask={binance_ask}, balance_base={balance_base}")
             order = await manage_request(exchanges['binance'], 'create_limit_sell_order', pair, amount, binance_ask)
