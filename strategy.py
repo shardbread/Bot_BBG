@@ -54,20 +54,18 @@ async def select_profitable_pairs(exchanges, fees, pred_model, scaler, balances)
             continue
 
     profitable_pairs.sort(key=lambda x: x[1], reverse=True)
-    selected_pairs = [(pair[0], pair[3]) for pair in profitable_pairs[:MAX_OPEN_ORDERS]]  # Передаем prediction
+    selected_pairs = [(pair[0], pair[3]) for pair in profitable_pairs[:MAX_OPEN_ORDERS]]
 
     if not selected_pairs:
         logging.info("Нет прибыльных пар, баланс остаётся неизменным")
     else:
-        total_binance = sum(balance['quote_binance'] for balance in balances.values())
+        total_binance = max(sum(balance['quote_binance'] for balance in balances.values()), 0)
         total_bingx = sum(balance['quote_bingx'] for balance in balances.values())
+        allocation_per_pair = total_binance / len(selected_pairs) if total_binance > 0 else 0
         for pair in TRADING_PAIRS:
             if pair in [p[0] for p in selected_pairs]:
-                rank = [p[0] for p in selected_pairs].index(pair) + 1
-                weight = 1 / rank
-                total_weight = sum(1 / (i + 1) for i in range(len(selected_pairs)))
-                balances[pair]['quote_binance'] = total_binance * (weight / total_weight)
-                balances[pair]['quote_bingx'] = total_bingx * (weight / total_weight)
+                balances[pair]['quote_binance'] = min(allocation_per_pair, total_binance)
+                balances[pair]['quote_bingx'] = total_bingx / len(selected_pairs)
             else:
                 balances[pair]['quote_binance'] = 0.0
                 balances[pair]['quote_bingx'] = 0.0
@@ -102,7 +100,8 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
 
     if balance_quote_binance > MIN_ORDER_SIZE:
         min_notional = 10.0
-        amount = max(min_notional / binance_bid, balance_quote_binance * 1.0 / binance_bid, binance_bid_amount)
+        amount = min(min_notional / binance_bid, balance_quote_binance * 0.5 / binance_bid,
+                     binance_bid_amount)  # Уменьшено до 50%
         if pair == 'XRP/USDT':
             amount = max(amount, 1.0)
         elif pair == 'ETH/USDT':
@@ -114,11 +113,10 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
         elif pair == 'DOGE/USDT':
             amount = max(amount, 100.0)
         elif pair == 'BTC/USDT':
-            amount = max(amount, 0.001)  # Минимальное количество для BTC
+            amount = max(amount, 0.001)
 
-        # Проверка достаточности баланса для покупки
         required_balance = amount * binance_bid
-        if balance_quote_binance >= required_balance:
+        if balance_quote_binance > required_balance:  # Изменено на > для запаса
             logging.info(
                 f"{pair}: Рассчитан amount={amount:.6f} для покупки, bid={binance_bid}, balance_quote_binance={balance_quote_binance}")
             order = await manage_request(exchanges['binance'], 'create_limit_buy_order', pair, amount, binance_bid)
