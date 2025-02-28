@@ -16,17 +16,16 @@ async def check_and_cancel_orders(exchange, symbol, balances, atr, open_orders):
         try:
             order_info = await exchange.fetch_order(order['id'], symbol)
             if order_info is not None and order_info['status'] == 'closed':
+                fee_cost = order_info.get('fee', {}).get('cost', 0.0) if order_info.get('fee') is not None else 0.0
                 if order['side'] == 'buy':
-                    balances[symbol][balance_key] -= order_info['filled'] * order_info['price'] + order_info['fee'][
-                        'cost']
+                    balances[symbol][balance_key] -= order_info['filled'] * order_info['price'] + fee_cost
                     balances[symbol]['base'] += order_info['filled']
                 else:
-                    balances[symbol][balance_key] += order_info['filled'] * order_info['price'] - order_info['fee'][
-                        'cost']
+                    balances[symbol][balance_key] += order_info['filled'] * order_info['price'] - fee_cost
                     balances[symbol]['base'] -= order_info['filled']
-                    balances[symbol]['total_fees'] += order_info['fee']['cost']
+                    balances[symbol]['total_fees'] += fee_cost
                 from globals import daily_losses
-                daily_losses[symbol] += order_info['fee']['cost']
+                daily_losses[symbol] += fee_cost
                 orders_to_remove.append(i)
                 logging.info(f"{symbol}: Ордер {order['id']} закрыт, статус: {order_info['status']}")
             elif order_info is None:
