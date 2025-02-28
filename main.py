@@ -114,17 +114,18 @@ async def main():
                         await send_telegram_message(
                             f"{pair_data[0]}: Достигнут лимит открытых ордеров ({MAX_OPEN_ORDERS})")
                         continue
-                    tasks.append(trade_pair(exchanges, pair_data, balances, pred_model, scaler, fees, atr, loss_model,
-                                            loss_scaler, open_orders))
+                    task = trade_pair(exchanges, pair_data, balances, pred_model, scaler, fees, atr, loss_model,
+                                      loss_scaler, open_orders)
+                    tasks.append(asyncio.ensure_future(task))  # Явно создаём задачи
 
                 if tasks:
-                    await asyncio.gather(*tasks, return_exceptions=True)
+                    await asyncio.wait(tasks, return_when=asyncio.ALL_COMPLETED)  # Ждём завершения всех задач
 
                 iteration += 1
                 print(f"Итерация {iteration} завершена")
                 logging.info(f"Конец итерации {iteration}")
 
-                await asyncio.sleep(30)  # Уменьшено до 30 секунд
+                await asyncio.sleep(30)
 
             except Exception as e:
                 logging.error(f"Ошибка в цикле итерации: {str(e)}")

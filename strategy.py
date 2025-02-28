@@ -77,7 +77,7 @@ async def select_profitable_pairs(exchanges, fees, pred_model, scaler, balances)
 
 
 async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, loss_model, loss_scaler, open_orders):
-    pair, prediction = pair_data  # Получаем pair и prediction из selected_pairs
+    pair, prediction = pair_data
     await check_and_cancel_orders(exchanges['binance'], pair, balances, atr, open_orders)
 
     binance_order_book = await get_order_book(exchanges['binance'], pair)
@@ -92,7 +92,7 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
     balance_quote_binance = balances[pair]['quote_binance']
     entry_price = balances[pair]['entry_price']
 
-    prob = prediction  # Используем предсказание из select_profitable_pairs
+    prob = prediction
 
     logging.info(
         f"{pair}: Проверка условий торговли: prob={prob:.6f}, MAX_PROB={MAX_PROB}, balance_quote_binance={balance_quote_binance:.2f}, MIN_ORDER_SIZE={MIN_ORDER_SIZE}")
@@ -100,7 +100,6 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
     atr_stop_loss = atr * 2
     fixed_stop_loss = entry_price * (1 - FIXED_STOP_LOSS) if entry_price else 0
 
-    # Убираем повторную проверку prob > MAX_PROB, так как пара уже выбрана
     if balance_quote_binance > MIN_ORDER_SIZE:
         min_notional = 10.0
         amount = max(min_notional / binance_bid, balance_quote_binance * 1.0 / binance_bid, binance_bid_amount)
@@ -114,16 +113,25 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
             amount = max(amount, 10.0)
         elif pair == 'DOGE/USDT':
             amount = max(amount, 100.0)
-        logging.info(
-            f"{pair}: Рассчитан amount={amount:.6f} для покупки, bid={binance_bid}, balance_quote_binance={balance_quote_binance}")
-        order = await manage_request(exchanges['binance'], 'create_limit_buy_order', pair, amount, binance_bid)
-        open_orders[pair].append({'id': order['id'], 'timestamp': time.time(), 'side': 'buy', 'amount': amount})
-        balances[pair]['entry_price'] = binance_bid
-        balances[pair]['quote_binance'] -= amount * binance_bid
-        balances[pair]['base'] += amount
-        msg = f"{pair}: Выставлен ордер на покупку {amount:.4f} {base} на Binance по {binance_bid}, Уверенность: {prob:.2f}"
-        logging.info(msg)
-        await send_telegram_message(msg)
+        elif pair == 'BTC/USDT':
+            amount = max(amount, 0.001)  # Минимальное количество для BTC
+
+        # Проверка достаточности баланса для покупки
+        required_balance = amount * binance_bid
+        if balance_quote_binance >= required_balance:
+            logging.info(
+                f"{pair}: Рассчитан amount={amount:.6f} для покупки, bid={binance_bid}, balance_quote_binance={balance_quote_binance}")
+            order = await manage_request(exchanges['binance'], 'create_limit_buy_order', pair, amount, binance_bid)
+            open_orders[pair].append({'id': order['id'], 'timestamp': time.time(), 'side': 'buy', 'amount': amount})
+            balances[pair]['entry_price'] = binance_bid
+            balances[pair]['quote_binance'] -= amount * binance_bid
+            balances[pair]['base'] += amount
+            msg = f"{pair}: Выставлен ордер на покупку {amount:.4f} {base} на Binance по {binance_bid}, Уверенность: {prob:.2f}"
+            logging.info(msg)
+            await send_telegram_message(msg)
+        else:
+            logging.warning(
+                f"{pair}: Недостаточно баланса для покупки: требуется {required_balance:.2f}, доступно {balance_quote_binance:.2f}")
 
     elif balance_base > 0:
         if prob < MAX_PROB:

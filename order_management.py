@@ -49,11 +49,16 @@ async def shutdown(exchanges, balances, open_orders):
                 try:
                     order_book = await exchange.fetch_order_book(symbol)
                     ask_price = order_book['asks'][0][0]
-                    order = await exchange.create_limit_sell_order(symbol, balances[symbol]['base'], ask_price)
-                    balances[symbol][balance_key] += balances[symbol]['base'] * ask_price
-                    balances[symbol]['base'] = 0
-                    await send_telegram_message(
-                        f"{symbol}: Проданы остатки {balances[symbol]['base']} {base} на {exchange_name} по {ask_price}")
+                    amount = balances[symbol]['base']
+                    # Проверка на достаточность баланса базового актива
+                    if amount > 0:
+                        order = await exchange.create_limit_sell_order(symbol, amount, ask_price)
+                        balances[symbol][balance_key] += amount * ask_price
+                        balances[symbol]['base'] = 0
+                        await send_telegram_message(
+                            f"{symbol}: Проданы остатки {amount:.4f} {base} на {exchange_name} по {ask_price}")
+                    else:
+                        logging.warning(f"{symbol}: Нет достаточного баланса базового актива для продажи")
                 except Exception as e:
                     logging.error(f"Ошибка продажи остатков {symbol} на {exchange_name}: {str(e)}")
                     await send_telegram_message(f"Ошибка продажи остатков {symbol} на {exchange_name}: {str(e)}")
