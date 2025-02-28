@@ -137,12 +137,15 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
     await asyncio.sleep(3)
     await check_and_cancel_orders(exchanges['binance'], pair, balances, atr, open_orders)
 
-    # Продажа всего остатка базового актива через рыночный ордер, если он положительный и сумма >= MIN_SELL_SIZE
-    balance_base = balances[pair]['base']
+    # Проверка текущего баланса базового актива перед продажей
+    balance_info = await exchanges['binance'].fetch_balance()
+    available_base = balance_info.get(base, {}).get('free', 0)
+    balance_base = min(balances[pair]['base'], available_base)  # Используем меньшее значение для продажи
+
     if balance_base > 0 and balance_base * binance_ask >= MIN_SELL_SIZE:
-        amount = balance_base  # Продаём весь остаток
+        amount = balance_base  # Продаём весь доступный остаток
         logging.info(
-            f"{pair}: Рассчитан amount={amount:.6f} для продажи остатков, ask={binance_ask}, balance_base={balance_base}")
+            f"{pair}: Рассчитан amount={amount:.6f} для продажи остатков, ask={binance_ask}, balance_base={balance_base}, available_base={available_base}")
         try:
             order = await manage_request(exchanges['binance'], 'create_market_sell_order', pair, amount)
             open_orders[pair].append({'id': order['id'], 'timestamp': time.time(), 'side': 'sell', 'amount': amount})
