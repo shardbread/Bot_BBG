@@ -2,6 +2,8 @@
 # -*- coding: utf-8 -*-
 import logging
 import asyncio
+
+from config import MIN_ORDER_SIZE
 from exchange import send_telegram_message
 
 
@@ -50,12 +52,15 @@ async def shutdown(exchanges, balances, open_orders):
                     order_book = await exchange.fetch_order_book(symbol)
                     ask_price = order_book['asks'][0][0]
                     amount = balances[symbol]['base']
-                    order = await exchange.create_limit_sell_order(symbol, amount, ask_price)
-                    balances[symbol][balance_key] = max(balances[symbol][balance_key] + amount * ask_price, 0)
-                    balances[symbol]['base'] = 0
-                    await send_telegram_message(
-                        f"{symbol}: Проданы остатки {amount:.4f} {base} на {exchange_name} по {ask_price}")
+                    if amount * ask_price >= MIN_ORDER_SIZE:  # Проверка на минимальную сумму
+                        order = await exchange.create_limit_sell_order(symbol, amount, ask_price)
+                        balances[symbol][balance_key] = max(balances[symbol][balance_key] + amount * ask_price, 0)
+                        balances[symbol]['base'] = 0
+                        await send_telegram_message(
+                            f"{symbol}: Проданы остатки {amount:.4f} {base} на {exchange_name} по {ask_price}")
+                    else:
+                        logging.info(
+                            f"{symbol}: Остаток {amount:.4f} {base} слишком мал для продажи (сумма < {  MIN_ORDER_SIZE} USDT)")
                 except Exception as e:
-                    logging.error(f"Ошибка продажи остатков {symbol} на {exchange_name}: {str(e)}")
-                    await send_telegram_message(f"Ошибка продажи остатков {symbol} на {exchange_name}: {str(e)}")
+                    logging.info(f"{symbol}: Пропущена продажа остатков из-за ошибки: {str(e)}")
     logging.info("Все ордера завершены. Бот остановлен.")
