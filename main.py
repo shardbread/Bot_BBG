@@ -11,7 +11,7 @@ from model import train_lstm_model, train_gru_model
 from strategy import trade_pair, select_profitable_pairs
 from order_management import shutdown
 from limits import check_drawdown, check_daily_loss_limit, check_volatility
-from config import TRADING_PAIRS, INITIAL_BALANCE
+from config import TRADING_PAIRS, INITIAL_BALANCE, MIN_ORDER_SIZE
 from globals import MAX_OPEN_ORDERS
 import logging
 from collections import defaultdict
@@ -84,6 +84,11 @@ async def main():
                     break
 
                 logging.info("Вызов select_profitable_pairs")
+                total_binance = sum(balance['quote_binance'] for balance in balances.values())
+                if total_binance < MIN_ORDER_SIZE:
+                    logging.warning(
+                        f"Общий баланс USDT ({total_binance:.2f}) ниже минимального ({MIN_ORDER_SIZE}). Остановка торговли.")
+                    break
                 profitable_pairs = await select_profitable_pairs(exchanges, fees, pred_model, scaler, balances)
                 logging.info(f"Выбраны пары: {[pair[0] for pair in profitable_pairs]} с лимитом {MAX_OPEN_ORDERS}")
                 await send_telegram_message(
