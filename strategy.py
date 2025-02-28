@@ -118,7 +118,7 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
             amount = 0.0005  # Фиксированный минимальный объём для BTC
 
         required_balance = amount * binance_bid
-        if balance_quote_binance >= required_balance or pair == 'BTC/USDT':  # Исключение для BTC
+        if balance_quote_binance >= required_balance:
             logging.info(
                 f"{pair}: Рассчитан amount={amount:.6f} для покупки, bid={binance_bid}, balance_quote_binance={balance_quote_binance}")
             order = await manage_request(exchanges['binance'], 'create_limit_buy_order', pair, amount, binance_bid)
@@ -137,22 +137,17 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
     await asyncio.sleep(3)
     await check_and_cancel_orders(exchanges['binance'], pair, balances, atr, open_orders)
 
-    # Проверка текущего баланса базового актива перед продажей
-    balance_info = await exchanges['binance'].fetch_balance()
-    available_base = balance_info.get(base, {}).get('free', 0)
-    balances[pair]['base'] = available_base  # Синхронизация с реальным балансом
+    # Продажа остатков только из внутреннего учёта
     balance_base = balances[pair]['base']
-
     if balance_base > 0 and balance_base * binance_ask >= MIN_SELL_SIZE:
         amount = balance_base  # Продаём весь доступный остаток
         logging.info(
-            f"{pair}: Рассчитан amount={amount:.6f} для продажи остатков, ask={binance_ask}, balance_base={balance_base}, available_base={available_base}")
+            f"{pair}: Рассчитан amount={amount:.6f} для продажи остатков, ask={binance_ask}, balance_base={balance_base}")
         try:
             order = await manage_request(exchanges['binance'], 'create_market_sell_order', pair, amount)
             open_orders[pair].append({'id': order['id'], 'timestamp': time.time(), 'side': 'sell', 'amount': amount})
-            # Получаем фактическую сумму и цену продажи из ордера
             filled_amount = order.get('filled', amount)
-            filled_price = order.get('price', binance_ask) or binance_ask  # Используем ask, если цена не указана
+            filled_price = order.get('price', binance_ask) or binance_ask
             sold_value = filled_amount * filled_price
             balances[pair]['quote_binance'] += sold_value
             balances[pair]['base'] -= filled_amount
@@ -161,10 +156,7 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
             msg = f"{pair}: Выставлен рыночный ордер на продажу остатков {filled_amount:.4f} {base} по {filled_price:.2f}, получено {sold_value:.2f} USDT"
             logging.info(msg)
             await send_telegram_message(msg)
-            await asyncio.sleep(1)  # Задержка для синхронизации баланса
-            # Обновляем баланс после продажи
-            balance_info = await exchanges['binance'].fetch_balance()
-            balances[pair]['base'] = balance_info.get(base, {}).get('free', 0)
+            await asyncio.sleep(1)  # Задержка для синхронизации
         except Exception as e:
             logging.error(f"{pair}: Ошибка продажи остатков: {str(e)}")
 
@@ -173,14 +165,13 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
         f"{pair}: {balances[pair]['base']:.4f} {base}, Binance: {balances[pair]['quote_binance']:.2f} USDT, BingX: {balances[pair]['quote_bingx']:.2f} USDT, Общие комиссии ${balances[pair]['total_fees']:.2f}, Дневные убытки ${daily_losses[pair]:.2f}")
 
 
-# Добавим вывод остатков в итоговый отчёт
 async def finalize_report(exchanges, balances):
     total_usdt = sum(balance['quote_binance'] for balance in balances.values())
     remaining_assets_value = 0
     for pair in TRADING_PAIRS:
         base = pair.split('/')[0]
         balance_base = balances[pair]['base']
-        if balance_base > 0:
+        if balance_base != 0:  # Учитываем как положительные, так и отрицательные остатки
             ticker = await get_ticker(exchanges['binance'], pair)
             price = ticker['ask']
             value = balance_base * price
