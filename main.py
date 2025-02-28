@@ -124,14 +124,14 @@ async def main():
                 print(f"Итерация {iteration} завершена")
                 logging.info(f"Конец итерации {iteration}")
 
+                await asyncio.sleep(30)  # Уменьшено до 30 секунд
+
             except Exception as e:
                 logging.error(f"Ошибка в цикле итерации: {str(e)}")
                 await asyncio.sleep(10)
 
-            await asyncio.sleep(300)
-
-        if not running:
-            await shutdown(exchanges, balances, open_orders)
+        logging.info("Достигнута последняя итерация, завершаем работу")
+        await shutdown(exchanges, balances, open_orders)
 
     except Exception as e:
         logging.error(f"Критическая ошибка в main: {str(e)}")
