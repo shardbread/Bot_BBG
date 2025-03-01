@@ -36,7 +36,7 @@ async def select_profitable_pairs(exchanges, fees, pred_model, scaler, balances)
             min_spread = 0.0001
 
             prediction_data = await get_historical_data(exchanges['binance'], pair, limit=LOOKBACK + 100)
-            prediction_data = await add_features(prediction_data)  # Добавляем await
+            prediction_data = await add_features(prediction_data)
             if prediction_data.empty:
                 logging.error(f"Данные для {pair} пусты после add_features, пропускаем пару")
                 continue
@@ -72,7 +72,7 @@ async def select_profitable_pairs(exchanges, fees, pred_model, scaler, balances)
         for pair in TRADING_PAIRS:
             if pair in [p[0] for p in selected_pairs]:
                 balances[pair]['quote_binance'] = min(allocation_per_pair, total_binance)
-                balances[pair]['quote_bingx'] = total_bingx / len(selected_pairs)  # Оставляем для будущего включения
+                balances[pair]['quote_bingx'] = total_bingx / len(selected_pairs)
             else:
                 balances[pair]['quote_binance'] = 0.0
                 balances[pair]['quote_bingx'] = 0.0
@@ -160,19 +160,19 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
         min_amount = min_notional_sell / binance_ask
 
         if pair == 'XRP/USDT':
-            min_amount = max(min_amount, 0.1)
+            min_amount = max(min_amount, 5.0)  # Минимальный объём для XRP
             amount = round(max(min_amount, balance_base * trade_fraction), 1)
         elif pair == 'ETH/USDT':
-            min_amount = max(min_amount, 0.001)
+            min_amount = max(min_amount, 0.01)
             amount = round(max(min_amount, balance_base * trade_fraction), 3)
         elif pair == 'BNB/USDT':
-            min_amount = max(min_amount, 0.01)
+            min_amount = max(min_amount, 0.1)
             amount = round(max(min_amount, balance_base * trade_fraction), 2)
         elif pair == 'ADA/USDT':
-            min_amount = max(min_amount, 0.1)
+            min_amount = max(min_amount, 10.0)  # Минимальный объём для ADA
             amount = round(max(min_amount, balance_base * trade_fraction), 1)
         elif pair == 'DOGE/USDT':
-            min_amount = max(min_amount, 1.0)
+            min_amount = max(min_amount, 100.0)  # Минимальный объём для DOGE
             amount = round(max(min_amount, balance_base * trade_fraction), 0)
         elif pair == 'BTC/USDT':
             min_amount = max(min_amount, 0.0001)
