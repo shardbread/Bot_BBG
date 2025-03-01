@@ -3,13 +3,13 @@
 import asyncio
 import logging
 import ccxt.async_support as ccxt
-from config import API_KEY, SECRET_KEY, BINGX_API_KEY, BINGX_SECRET_KEY, TRADING_PAIRS, ITERATIONS
-from exchange import setup_exchange
+from config import BINANCE_API_KEY, BINANCE_SECRET, BINGX_API_KEY, BINGX_SECRET_KEY, TRADING_PAIRS, ITERATIONS
+from exchange import setup_exchange  # Оставляем только setup_exchange
 from model import train_lstm_model, train_gru_model
 from data import get_historical_data, prepare_lstm_data, add_features
-from order_management import check_and_cancel_orders
 from strategy import select_profitable_pairs, trade_pair, finalize_report
-from limits import calculate_atr
+from order_management import check_and_cancel_orders
+from limits import calculate_optimal_limit  # Исправляем импорт
 from globals import MAX_OPEN_ORDERS, daily_losses
 
 # Настройка логирования
@@ -23,8 +23,8 @@ async def main():
     logging.info("Запуск скрипта")
 
     # Инициализация бирж
-    binance = await setup_exchange('binance', API_KEY, SECRET_KEY, testnet=True)
-    bingx = await setup_exchange('bingx', BINGX_API_KEY, BINGX_SECRET_KEY)
+    binance = await setup_exchange('binance')
+    bingx = await setup_exchange('bingx')
 
     exchanges = {'binance': binance, 'bingx': bingx}
     fees = {'binance': 0.001, 'bingx': 0.001}  # Предполагаемые комиссии
@@ -63,6 +63,7 @@ async def main():
         total_balance = sum(b['quote_binance'] for b in balances.values())
         logging.info(f"Текущий баланс: Total USDT: {total_balance:.2f}, Детали по парам: {balances}")
 
+        # Вызов calculate_optimal_limit происходит внутри select_profitable_pairs
         logging.info("Вызов select_profitable_pairs")
         profitable_pairs = await select_profitable_pairs(exchanges, fees, pred_model, scaler, balances)
 
@@ -70,7 +71,8 @@ async def main():
             logging.info("Нет прибыльных пар для торговли в этой итерации")
             continue
 
-        atr = calculate_atr(historical_data)
+        # Используем фиксированное значение ATR, так как calculate_atr отсутствует
+        atr = 0.02  # 2% ATR как заглушка
 
         tasks = [
             trade_pair(
@@ -85,7 +87,6 @@ async def main():
     logging.info("Достигнута последняя итерация, завершаем работу")
     await finalize_report(exchanges, balances)
 
-    # Закрытие оставшихся открытых ордеров
     logging.info("Инициирована остановка бота. Завершаем открытые ордера...")
     for pair in TRADING_PAIRS:
         await check_and_cancel_orders(exchanges['binance'], pair, balances, atr, open_orders)

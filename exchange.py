@@ -3,10 +3,12 @@
 import ccxt.async_support as ccxt
 import logging
 import asyncio
-from config import BINANCE_API_KEY, BINANCE_SECRET, BINGX_API_KEY, BINGX_SECRET, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from config import BINANCE_API_KEY, BINANCE_SECRET, BINGX_API_KEY, BINGX_SECRET_KEY, TELEGRAM_BOT_TOKEN, \
+    TELEGRAM_CHAT_ID, MODE
 import httpx
 
-async def connect_exchange(exchange_name):
+
+async def setup_exchange(exchange_name):
     if exchange_name == 'binance':
         exchange = ccxt.binance({
             'apiKey': BINANCE_API_KEY,
@@ -14,11 +16,12 @@ async def connect_exchange(exchange_name):
             'enableRateLimit': True,
             'options': {'defaultType': 'spot'},
         })
-        exchange.set_sandbox_mode(True)
+        if MODE == "test":
+            exchange.set_sandbox_mode(True)
     elif exchange_name == 'bingx':
         exchange = ccxt.bingx({
             'apiKey': BINGX_API_KEY,
-            'secret': BINGX_SECRET,
+            'secret': BINGX_SECRET_KEY,
             'enableRateLimit': True,
         })
     await exchange.load_markets()
