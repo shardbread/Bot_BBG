@@ -148,9 +148,12 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
     available_base = balance_info.get(base, {}).get('free', 0)
     balance_base = min(balances[pair]['base'], available_base)
     if balance_base > 0 and balance_base * binance_ask >= MIN_SELL_SIZE:
-        min_notional_sell = 10.0  # Минимальный нотинал для продажи (USDT)
-        amount = max(min_notional_sell / binance_ask, balance_base)  # Продаём минимум 10 USDT или все остатки
-        amount = min(amount, balance_base, binance_ask_amount)  # Не превышаем доступное
+        min_notional_sell = 10.0  # Минимальный нотинал Binance для продажи
+        amount = min_notional_sell / binance_ask  # Минимальный объём для 10 USDT
+        if balance_base > amount:  # Продаём минимум 10 USDT или всё, если меньше
+            amount = min(balance_base, binance_ask_amount)  # Ограничиваем доступным
+        else:
+            amount = balance_base  # Если меньше минимального, продаём всё
         logging.info(
             f"{pair}: Рассчитан amount={amount:.6f} для продажи остатков, ask={binance_ask}, balance_base={balance_base}, available_base={available_base}")
         try:
