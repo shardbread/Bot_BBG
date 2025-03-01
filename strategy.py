@@ -20,17 +20,15 @@ async def select_profitable_pairs(exchanges, fees, pred_model, scaler, balances)
     for pair in TRADING_PAIRS:
         try:
             binance_ticker = await get_ticker(exchanges['binance'], pair)
-            bingx_ticker = binance_ticker  # Пока BingX не используется активно
+            bingx_ticker = binance_ticker
 
             binance_bid = binance_ticker['bid']
             binance_ask = binance_ticker['ask']
             bingx_bid = bingx_ticker['bid']
             bingx_ask = bingx_ticker['ask']
 
-            spread_buy_binance_sell_bingx = (bingx_ask - binance_bid) / min(binance_bid,
-                                                                            bingx_ask) if binance_bid < bingx_ask else 0
-            spread_buy_bingx_sell_binance = (binance_ask - bingx_bid) / min(bingx_bid,
-                                                                            binance_ask) if bingx_bid < binance_ask else 0
+            spread_buy_binance_sell_bingx = (bingx_ask - binance_bid) / min(binance_bid, bingx_ask) if binance_bid < bingx_ask else 0
+            spread_buy_bingx_sell_binance = (binance_ask - bingx_bid) / min(bingx_bid, binance_ask) if bingx_bid < binance_ask else 0
             max_spread = max(spread_buy_binance_sell_bingx, spread_buy_bingx_sell_binance)
 
             min_spread = 0.0001
@@ -48,8 +46,7 @@ async def select_profitable_pairs(exchanges, fees, pred_model, scaler, balances)
 
             score = max_spread * 100 + prediction
 
-            logging.info(
-                f"{pair}: max_spread={max_spread:.6f}, min_spread={min_spread:.6f}, prediction={prediction:.6f}, score={score:.6f}")
+            logging.info(f"{pair}: max_spread={max_spread:.6f}, min_spread={min_spread:.6f}, prediction={prediction:.6f}, score={score:.6f}")
 
             if max_spread > min_spread or prediction > MAX_PREDICTION:
                 profitable_pairs.append((pair, score, max_spread, prediction))
@@ -81,34 +78,27 @@ async def select_profitable_pairs(exchanges, fees, pred_model, scaler, balances)
     return selected_pairs
 
 
-async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, loss_model, loss_scaler, open_orders,
-                     trade_fraction):
+async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, loss_model, loss_scaler, open_orders, trade_fraction):
     pair, prediction = pair_data
     await check_and_cancel_orders(exchanges['binance'], pair, balances, atr, open_orders)
 
     binance_order_book = await get_order_book(exchanges['binance'], pair)
-    binance_bid, binance_bid_amount = await get_best_price_and_amount(exchanges['binance'], pair, binance_order_book,
-                                                                      'buy', 0.1, balances, atr, loss_model,
-                                                                      loss_scaler, 'binance')
-    binance_ask, binance_ask_amount = await get_best_price_and_amount(exchanges['binance'], pair, binance_order_book,
-                                                                      'sell', 0.1, balances, atr, loss_model,
-                                                                      loss_scaler, 'binance')
+    binance_bid, binance_bid_amount = await get_best_price_and_amount(exchanges['binance'], pair, binance_order_book, 'buy', 0.1, balances, atr, loss_model, loss_scaler, 'binance')
+    binance_ask, binance_ask_amount = await get_best_price_and_amount(exchanges['binance'], pair, binance_order_book, 'sell', 0.1, balances, atr, loss_model, loss_scaler, 'binance')
     base, quote = pair.split('/')
     balance_quote_binance = balances[pair]['quote_binance']
     entry_price = balances[pair]['entry_price']
 
     prob = prediction
 
-    logging.info(
-        f"{pair}: Проверка условий торговли: prob={prob:.6f}, MAX_PROB={MAX_PROB}, balance_quote_binance={balance_quote_binance:.2f}, MIN_ORDER_SIZE={MIN_ORDER_SIZE}")
+    logging.info(f"{pair}: Проверка условий торговли: prob={prob:.6f}, MAX_PROB={MAX_PROB}, balance_quote_binance={balance_quote_binance:.2f}, MIN_ORDER_SIZE={MIN_ORDER_SIZE}")
 
     atr_stop_loss = atr * 2 if atr else 0.04
     fixed_stop_loss = entry_price * (1 - FIXED_STOP_LOSS) if entry_price else 0
 
     if balance_quote_binance > MIN_ORDER_SIZE:
         min_notional = 10.0
-        amount = max(min_notional / binance_bid, balance_quote_binance * trade_fraction / binance_bid,
-                     binance_bid_amount)
+        amount = max(min_notional / binance_bid, balance_quote_binance * trade_fraction / binance_bid, binance_bid_amount)
         if pair == 'XRP/USDT':
             amount = max(amount, 5.0)
             amount = round(amount, 1)
@@ -134,8 +124,7 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
         balance_info = await exchanges['binance'].fetch_balance()
         available_quote = balance_info.get('USDT', {}).get('free', 0)
         if required_balance <= min(balance_quote_binance, available_quote):
-            logging.info(
-                f"{pair}: Рассчитан amount={amount:.6f} для покупки, bid={binance_bid}, balance_quote_binance={balance_quote_binance}")
+            logging.info(f"{pair}: Рассчитан amount={amount:.6f} для покупки, bid={binance_bid}, balance_quote_binance={balance_quote_binance}")
             order = await manage_request(exchanges['binance'], 'create_limit_buy_order', pair, amount, binance_bid)
             open_orders[pair].append({'id': order['id'], 'timestamp': time.time(), 'side': 'buy', 'amount': amount})
             balances[pair]['entry_price'] = binance_bid
@@ -146,8 +135,7 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
             logging.info(msg)
             await send_telegram_message(msg)
         else:
-            logging.warning(
-                f"{pair}: Недостаточно баланса для покупки: требуется {required_balance:.2f}, доступно {min(balance_quote_binance, available_quote):.2f}")
+            logging.warning(f"{pair}: Недостаточно баланса для покупки: требуется {required_balance:.2f}, доступно {min(balance_quote_binance, available_quote):.2f}")
 
     await asyncio.sleep(3)
     await check_and_cancel_orders(exchanges['binance'], pair, balances, atr, open_orders)
@@ -160,7 +148,7 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
         min_amount = min_notional_sell / binance_ask
 
         if pair == 'XRP/USDT':
-            min_amount = max(min_amount, 5.0)  # Минимальный объём для XRP
+            min_amount = max(min_amount, 5.0)
             amount = round(max(min_amount, balance_base * trade_fraction), 1)
         elif pair == 'ETH/USDT':
             min_amount = max(min_amount, 0.01)
@@ -169,10 +157,10 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
             min_amount = max(min_amount, 0.1)
             amount = round(max(min_amount, balance_base * trade_fraction), 2)
         elif pair == 'ADA/USDT':
-            min_amount = max(min_amount, 10.0)  # Минимальный объём для ADA
+            min_amount = max(min_amount, 15.0)  # Увеличено до 15 для ADA, чтобы пройти NOTIONAL
             amount = round(max(min_amount, balance_base * trade_fraction), 1)
         elif pair == 'DOGE/USDT':
-            min_amount = max(min_amount, 100.0)  # Минимальный объём для DOGE
+            min_amount = max(min_amount, 100.0)
             amount = round(max(min_amount, balance_base * trade_fraction), 0)
         elif pair == 'BTC/USDT':
             min_amount = max(min_amount, 0.0001)
@@ -181,8 +169,7 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
             amount = round(max(min_amount, balance_base * trade_fraction), 2)
 
         amount = min(amount, balance_base, binance_ask_amount)
-        logging.info(
-            f"{pair}: Рассчитан amount={amount:.6f} для продажи остатков, ask={binance_ask}, balance_base={balance_base}, available_base={available_base}")
+        logging.info(f"{pair}: Рассчитан amount={amount:.6f} для продажи остатков, ask={binance_ask}, balance_base={balance_base}, available_base={available_base}")
         try:
             order = await manage_request(exchanges['binance'], 'create_market_sell_order', pair, amount)
             open_orders[pair].append({'id': order['id'], 'timestamp': time.time(), 'side': 'sell', 'amount': amount})
@@ -202,8 +189,7 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
             logging.error(f"{pair}: Ошибка продажи остатков: {str(e)}")
 
     from globals import daily_losses
-    print(
-        f"{pair}: {balances[pair]['base']:.4f} {base}, Binance: {balances[pair]['quote_binance']:.2f} USDT, BingX: {balances[pair]['quote_bingx']:.2f} USDT")
+    print(f"{pair}: {balances[pair]['base']:.4f} {base}, Binance: {balances[pair]['quote_binance']:.2f} USDT, BingX: {balances[pair]['quote_bingx']:.2f} USDT")
 
 
 async def finalize_report(exchanges, balances):
@@ -222,13 +208,9 @@ async def finalize_report(exchanges, balances):
     initial_balance = 7537.93
     final_balance = total_usdt + remaining_assets_value
     profit_loss = final_balance - initial_balance
-    logging.info(
-        f"Итоговый отчёт: Начальный баланс: {initial_balance:.2f} USDT, Конечный баланс (USDT + активы): {final_balance:.2f} USDT, Комиссии: 0.00 USDT, Прибыль/Убыток: {profit_loss:.2f} USDT")
+    logging.info(f"Итоговый отчёт: Начальный баланс: {initial_balance:.2f} USDT, Конечный баланс (USDT + активы): {final_balance:.2f} USDT, Комиссии: 0.00 USDT, Прибыль/Убыток: {profit_loss:.2f} USDT")
     for pair in TRADING_PAIRS:
         cost = balances[pair].get('cost', 0)
         revenue = balances[pair].get('revenue', 0)
-        pair_profit_loss = revenue - cost + (
-            balances[pair]['base'] * (await get_ticker(exchanges['binance'], pair))['ask'] if balances[pair][
-                                                                                                  'base'] != 0 else 0)
-        logging.info(
-            f"{pair}: Остатки {balances[pair]['base']:.4f}, USDT: {balances[pair]['quote_binance']:.2f}, Прибыль/Убыток: {pair_profit_loss:.2f} USDT")
+        pair_profit_loss = revenue - cost + (balances[pair]['base'] * (await get_ticker(exchanges['binance'], pair))['ask'] if balances[pair]['base'] != 0 else 0)
+        logging.info(f"{pair}: Остатки {balances[pair]['base']:.4f}, USDT: {balances[pair]['quote_binance']:.2f}, Прибыль/Убыток: {pair_profit_loss:.2f} USDT")
