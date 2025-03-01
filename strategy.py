@@ -36,8 +36,14 @@ async def select_profitable_pairs(exchanges, fees, pred_model, scaler, balances)
             min_spread = 0.0001
 
             prediction_data = await get_historical_data(exchanges['binance'], pair, limit=LOOKBACK + 100)
-            prediction_data = add_features(prediction_data)
+            prediction_data = await add_features(prediction_data)  # Добавляем await
+            if prediction_data.empty:
+                logging.error(f"Данные для {pair} пусты после add_features, пропускаем пару")
+                continue
             X, _, pred_scaler = prepare_lstm_data(prediction_data)
+            if X.size == 0:
+                logging.error(f"Подготовленные данные для {pair} пусты, пропускаем пару")
+                continue
             prediction = pred_model.predict(X[-1:], verbose=0)[0][0]
 
             score = max_spread * 100 + prediction
@@ -129,7 +135,7 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
             balances[pair]['cost'] = balances[pair].get('cost', 0) + amount * binance_bid
             msg = f"{pair}: Выставлен ордер на покупку {amount:.4f} {base} на Binance по {binance_bid}, Уверенность: {prob:.2f}"
             logging.info(msg)
-            await send_telegram_message(msg)  # Используем send_telegram_message
+            await send_telegram_message(msg)
         else:
             logging.warning(
                 f"{pair}: Недостаточно баланса для покупки: требуется {required_balance:.2f}, доступно {balance_quote_binance:.2f} или остаток станет отрицательным")
@@ -157,7 +163,7 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
                 balances[pair]['base'] = 0.0
             msg = f"{pair}: Выставлен рыночный ордер на продажу остатков {filled_amount:.4f} {base} по {filled_price:.2f}, получено {sold_value:.2f} USDT"
             logging.info(msg)
-            await send_telegram_message(msg)  # Используем send_telegram_message
+            await send_telegram_message(msg)
             await asyncio.sleep(1)
         except Exception as e:
             logging.error(f"{pair}: Ошибка продажи остатков: {str(e)}")
