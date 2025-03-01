@@ -110,15 +110,15 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
         amount = max(min_notional / binance_bid, balance_quote_binance * trade_fraction / binance_bid,
                      binance_bid_amount)
         if pair == 'XRP/USDT':
-            amount = max(amount, 5.0)
+            amount = max(amount, 5.0)  # Минимальный шаг для XRP
         elif pair == 'ETH/USDT':
             amount = max(amount, 0.01)
         elif pair == 'BNB/USDT':
             amount = max(amount, 0.1)
         elif pair == 'ADA/USDT':
-            amount = max(amount, 10.0)
+            amount = max(amount, 10.0)  # Минимальный шаг для ADA
         elif pair == 'DOGE/USDT':
-            amount = max(amount, 100.0)
+            amount = max(amount, 100.0)  # Минимальный шаг для DOGE
         elif pair == 'BTC/USDT':
             amount = 0.0005
 
@@ -148,12 +148,31 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
     available_base = balance_info.get(base, {}).get('free', 0)
     balance_base = min(balances[pair]['base'], available_base)
     if balance_base > 0 and balance_base * binance_ask >= MIN_SELL_SIZE:
-        min_notional_sell = 10.0  # Минимальный нотинал Binance для продажи
-        amount = min_notional_sell / binance_ask  # Минимальный объём для 10 USDT
-        if balance_base > amount:  # Продаём минимум 10 USDT или всё, если меньше
-            amount = min(balance_base, binance_ask_amount)  # Ограничиваем доступным
+        min_notional_sell = 10.0  # Минимальный нотинал Binance
+        min_amount = min_notional_sell / binance_ask  # Минимальный объём для 10 USDT
+        # Учитываем минимальную точность для каждой пары
+        if pair == 'XRP/USDT':
+            min_amount = max(min_amount, 0.1)  # Минимальная точность для XRP
+            amount = round(max(min_amount, balance_base), 1)
+        elif pair == 'ETH/USDT':
+            min_amount = max(min_amount, 0.001)
+            amount = round(max(min_amount, balance_base), 3)
+        elif pair == 'BNB/USDT':
+            min_amount = max(min_amount, 0.01)
+            amount = round(max(min_amount, balance_base), 2)
+        elif pair == 'ADA/USDT':
+            min_amount = max(min_amount, 0.1)
+            amount = round(max(min_amount, balance_base), 1)
+        elif pair == 'DOGE/USDT':
+            min_amount = max(min_amount, 1.0)  # Минимальная точность для DOGE
+            amount = round(max(min_amount, balance_base), 0)
+        elif pair == 'BTC/USDT':
+            min_amount = max(min_amount, 0.0001)
+            amount = round(max(min_amount, balance_base), 4)
         else:
-            amount = balance_base  # Если меньше минимального, продаём всё
+            amount = max(min_amount, balance_base)
+
+        amount = min(amount, balance_base, binance_ask_amount)  # Не превышаем доступное
         logging.info(
             f"{pair}: Рассчитан amount={amount:.6f} для продажи остатков, ask={binance_ask}, balance_base={balance_base}, available_base={available_base}")
         try:
@@ -177,7 +196,6 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
     from globals import daily_losses
     print(
         f"{pair}: {balances[pair]['base']:.4f} {base}, Binance: {balances[pair]['quote_binance']:.2f} USDT, BingX: {balances[pair]['quote_bingx']:.2f} USDT, Общие комиссии ${balances[pair]['total_fees']:.2f}, Дневные убытки ${daily_losses[pair]:.2f}")
-
 
 async def finalize_report(exchanges, balances):
     total_usdt = sum(balance['quote_binance'] for balance in balances.values())
