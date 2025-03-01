@@ -125,7 +125,7 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
         required_balance = amount * binance_bid
         balance_info = await exchanges['binance'].fetch_balance()
         available_quote = balance_info.get('USDT', {}).get('free', 0)
-        if required_balance <= min(balance_quote_binance, available_quote):  # Проверяем реальный баланс
+        if required_balance <= min(balance_quote_binance, available_quote):
             logging.info(
                 f"{pair}: Рассчитан amount={amount:.6f} для покупки, bid={binance_bid}, balance_quote_binance={balance_quote_binance}")
             order = await manage_request(exchanges['binance'], 'create_limit_buy_order', pair, amount, binance_bid)
@@ -146,9 +146,11 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
 
     balance_info = await exchanges['binance'].fetch_balance()
     available_base = balance_info.get(base, {}).get('free', 0)
-    balance_base = min(balances[pair]['base'], available_base)  # Ограничиваем внутренний учёт реальным балансом
+    balance_base = min(balances[pair]['base'], available_base)
     if balance_base > 0 and balance_base * binance_ask >= MIN_SELL_SIZE:
-        amount = min(balance_base, binance_ask_amount)  # Продаём не больше доступного
+        min_notional_sell = 10.0  # Минимальный нотинал для продажи (USDT)
+        amount = max(min_notional_sell / binance_ask, balance_base)  # Продаём минимум 10 USDT или все остатки
+        amount = min(amount, balance_base, binance_ask_amount)  # Не превышаем доступное
         logging.info(
             f"{pair}: Рассчитан amount={amount:.6f} для продажи остатков, ask={binance_ask}, balance_base={balance_base}, available_base={available_base}")
         try:
@@ -159,7 +161,7 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
             sold_value = filled_amount * filled_price
             balances[pair]['quote_binance'] += sold_value
             balances[pair]['base'] -= filled_amount
-            if balances[pair]['base'] < 0:  # Исправляем отрицательные остатки
+            if balances[pair]['base'] < 0:
                 balances[pair]['base'] = 0.0
             balances[pair]['revenue'] = balances[pair].get('revenue', 0) + sold_value
             msg = f"{pair}: Выставлен рыночный ордер на продажу остатков {filled_amount:.4f} {base} по {filled_price:.2f}, получено {sold_value:.2f} USDT"
