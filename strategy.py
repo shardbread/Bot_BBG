@@ -110,15 +110,15 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
         amount = max(min_notional / binance_bid, balance_quote_binance * trade_fraction / binance_bid,
                      binance_bid_amount)
         if pair == 'XRP/USDT':
-            amount = max(amount, 5.0)  # Минимальный шаг для XRP
+            amount = max(amount, 5.0)
         elif pair == 'ETH/USDT':
             amount = max(amount, 0.01)
         elif pair == 'BNB/USDT':
             amount = max(amount, 0.1)
         elif pair == 'ADA/USDT':
-            amount = max(amount, 10.0)  # Минимальный шаг для ADA
+            amount = max(amount, 10.0)
         elif pair == 'DOGE/USDT':
-            amount = max(amount, 100.0)  # Минимальный шаг для DOGE
+            amount = max(amount, 100.0)
         elif pair == 'BTC/USDT':
             amount = 0.0005
 
@@ -150,25 +150,32 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
     if balance_base > 0 and balance_base * binance_ask >= MIN_SELL_SIZE:
         min_notional_sell = 10.0  # Минимальный нотинал Binance
         min_amount = min_notional_sell / binance_ask  # Минимальный объём для 10 USDT
-        # Учитываем минимальную точность для каждой пары
+
+        # Устанавливаем минимальную точность и рассчитываем amount
         if pair == 'XRP/USDT':
-            min_amount = max(min_amount, 0.1)  # Минимальная точность для XRP
-            amount = round(max(min_amount, balance_base), 1)
+            min_amount = max(min_amount, 0.1)
+            amount = max(min_amount, balance_base)
+            amount = round(amount, 1)  # Точность до 1 знака
         elif pair == 'ETH/USDT':
             min_amount = max(min_amount, 0.001)
-            amount = round(max(min_amount, balance_base), 3)
+            amount = max(min_amount, balance_base)
+            amount = round(amount, 3)
         elif pair == 'BNB/USDT':
             min_amount = max(min_amount, 0.01)
-            amount = round(max(min_amount, balance_base), 2)
+            amount = max(min_amount, balance_base)
+            amount = round(amount, 2)
         elif pair == 'ADA/USDT':
             min_amount = max(min_amount, 0.1)
-            amount = round(max(min_amount, balance_base), 1)
+            amount = max(min_amount, balance_base)
+            amount = round(amount, 1)
         elif pair == 'DOGE/USDT':
-            min_amount = max(min_amount, 1.0)  # Минимальная точность для DOGE
-            amount = round(max(min_amount, balance_base), 0)
+            min_amount = max(min_amount, 1.0)
+            amount = max(min_amount, balance_base)
+            amount = round(amount, 0)  # Целое число
         elif pair == 'BTC/USDT':
             min_amount = max(min_amount, 0.0001)
-            amount = round(max(min_amount, balance_base), 4)
+            amount = max(min_amount, balance_base)
+            amount = round(amount, 4)
         else:
             amount = max(min_amount, balance_base)
 
