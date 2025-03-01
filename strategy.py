@@ -94,7 +94,6 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
                                                                       'sell', 0.1, balances, atr, loss_model,
                                                                       loss_scaler, 'binance')
     base, quote = pair.split('/')
-    balance_base = balances[pair]['base']
     balance_quote_binance = balances[pair]['quote_binance']
     entry_price = balances[pair]['entry_price']
 
@@ -103,7 +102,7 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
     logging.info(
         f"{pair}: Проверка условий торговли: prob={prob:.6f}, MAX_PROB={MAX_PROB}, balance_quote_binance={balance_quote_binance:.2f}, MIN_ORDER_SIZE={MIN_ORDER_SIZE}")
 
-    atr_stop_loss = atr * 2 if atr else 0.04  # Заглушка для ATR
+    atr_stop_loss = atr * 2 if atr else 0.04
     fixed_stop_loss = entry_price * (1 - FIXED_STOP_LOSS) if entry_price else 0
 
     if balance_quote_binance > MIN_ORDER_SIZE:
@@ -121,33 +120,35 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
         elif pair == 'DOGE/USDT':
             amount = max(amount, 100.0)
         elif pair == 'BTC/USDT':
-            amount = 0.0005  # Фиксированный минимальный объём для BTC
+            amount = 0.0005
 
         required_balance = amount * binance_bid
-        if balance_quote_binance >= required_balance and balance_base + amount >= 0:
+        balance_info = await exchanges['binance'].fetch_balance()
+        available_quote = balance_info.get('USDT', {}).get('free', 0)
+        if required_balance <= min(balance_quote_binance, available_quote):  # Проверяем реальный баланс
             logging.info(
                 f"{pair}: Рассчитан amount={amount:.6f} для покупки, bid={binance_bid}, balance_quote_binance={balance_quote_binance}")
             order = await manage_request(exchanges['binance'], 'create_limit_buy_order', pair, amount, binance_bid)
             open_orders[pair].append({'id': order['id'], 'timestamp': time.time(), 'side': 'buy', 'amount': amount})
             balances[pair]['entry_price'] = binance_bid
-            balances[pair]['quote_binance'] -= amount * binance_bid
+            balances[pair]['quote_binance'] -= required_balance
             balances[pair]['base'] += amount
-            balances[pair]['cost'] = balances[pair].get('cost', 0) + amount * binance_bid
+            balances[pair]['cost'] = balances[pair].get('cost', 0) + required_balance
             msg = f"{pair}: Выставлен ордер на покупку {amount:.4f} {base} на Binance по {binance_bid}, Уверенность: {prob:.2f}"
             logging.info(msg)
             await send_telegram_message(msg)
         else:
             logging.warning(
-                f"{pair}: Недостаточно баланса для покупки: требуется {required_balance:.2f}, доступно {balance_quote_binance:.2f} или остаток станет отрицательным")
+                f"{pair}: Недостаточно баланса для покупки: требуется {required_balance:.2f}, доступно {min(balance_quote_binance, available_quote):.2f}")
 
     await asyncio.sleep(3)
     await check_and_cancel_orders(exchanges['binance'], pair, balances, atr, open_orders)
 
     balance_info = await exchanges['binance'].fetch_balance()
     available_base = balance_info.get(base, {}).get('free', 0)
-    balance_base = min(balances[pair]['base'], available_base)
+    balance_base = min(balances[pair]['base'], available_base)  # Ограничиваем внутренний учёт реальным балансом
     if balance_base > 0 and balance_base * binance_ask >= MIN_SELL_SIZE:
-        amount = balance_base
+        amount = min(balance_base, binance_ask_amount)  # Продаём не больше доступного
         logging.info(
             f"{pair}: Рассчитан amount={amount:.6f} для продажи остатков, ask={binance_ask}, balance_base={balance_base}, available_base={available_base}")
         try:
@@ -158,9 +159,9 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
             sold_value = filled_amount * filled_price
             balances[pair]['quote_binance'] += sold_value
             balances[pair]['base'] -= filled_amount
-            balances[pair]['revenue'] = balances[pair].get('revenue', 0) + sold_value
-            if balances[pair]['base'] < 0:
+            if balances[pair]['base'] < 0:  # Исправляем отрицательные остатки
                 balances[pair]['base'] = 0.0
+            balances[pair]['revenue'] = balances[pair].get('revenue', 0) + sold_value
             msg = f"{pair}: Выставлен рыночный ордер на продажу остатков {filled_amount:.4f} {base} по {filled_price:.2f}, получено {sold_value:.2f} USDT"
             logging.info(msg)
             await send_telegram_message(msg)
