@@ -26,7 +26,10 @@ async def main():
     binance = await setup_exchange('binance')
     bingx = await setup_exchange('bingx')
 
-    exchanges = {'binance': binance, 'bingx': bingx}
+    exchanges = {
+        'binance': binance,
+        'bingx': bingx
+    }
     fees = {'binance': 0.001, 'bingx': 0.001}  # Предполагаемые комиссии
 
     # Подготовка данных и обучение моделей
