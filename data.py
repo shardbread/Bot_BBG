@@ -23,30 +23,37 @@ async def add_features(df):
         if df.empty:
             logging.error("DataFrame пустой, невозможно добавить признаки")
             return df
+
         # Средние скользящие
         df['MA10'] = df['close'].rolling(window=10).mean()
         df['MA50'] = df['close'].rolling(window=50).mean()
+
         # RSI
         delta = df['close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         rs = gain / loss
         df['RSI'] = 100 - (100 / (1 + rs))
+
         # MACD
         exp1 = df['close'].ewm(span=12, adjust=False).mean()
         exp2 = df['close'].ewm(span=26, adjust=False).mean()
         df['MACD'] = exp1 - exp2
         df['MACD_signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
+
         # Bollinger Bands
         df['BB_middle'] = df['close'].rolling(window=20).mean()
         df['BB_std'] = df['close'].rolling(window=20).std()
         df['BB_upper'] = df['BB_middle'] + (df['BB_std'] * 2)
         df['BB_lower'] = df['BB_middle'] - (df['BB_std'] * 2)
-        # ATR
-        df['TR'] = df[['high', 'low', 'close']].apply(
-            lambda x: max(x['high'] - x['low'], abs(x['high'] - x['close'].shift(1)),
-                          abs(x['low'] - x['close'].shift(1))), axis=1)
+
+        # ATR (исправленный расчёт)
+        high_low = df['high'] - df['low']
+        high_close_prev = abs(df['high'] - df['close'].shift(1))
+        low_close_prev = abs(df['low'] - df['close'].shift(1))
+        df['TR'] = pd.concat([high_low, high_close_prev, low_close_prev], axis=1).max(axis=1)
         df['ATR'] = df['TR'].rolling(window=14).mean()
+
         # Удаляем NaN
         df = df.dropna()
         logging.info(f"Добавлены признаки: {df.shape}, columns={df.columns.tolist()}")
