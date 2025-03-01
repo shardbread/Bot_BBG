@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 from config import FIXED_STOP_LOSS, MIN_ORDER_SIZE, TRADING_PAIRS, LOOKBACK, MAX_PREDICTION, MAX_PROB, MIN_SELL_SIZE
 from data import get_historical_data, prepare_lstm_data, add_features
-from exchange import get_ticker, manage_request
+from exchange import get_ticker, manage_request, send_telegram_message
 from price_calculator import get_best_price_and_amount, get_order_book
 from order_management import check_and_cancel_orders
 from limits import calculate_optimal_limit
@@ -66,7 +66,7 @@ async def select_profitable_pairs(exchanges, fees, pred_model, scaler, balances)
         for pair in TRADING_PAIRS:
             if pair in [p[0] for p in selected_pairs]:
                 balances[pair]['quote_binance'] = min(allocation_per_pair, total_binance)
-                balances[pair]['quote_bingx'] = total_bingx / len(selected_pairs)
+                balances[pair]['quote_bingx'] = total_bingx / len(selected_pairs)  # Оставляем для будущего включения
             else:
                 balances[pair]['quote_binance'] = 0.0
                 balances[pair]['quote_bingx'] = 0.0
@@ -129,7 +129,7 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
             balances[pair]['cost'] = balances[pair].get('cost', 0) + amount * binance_bid
             msg = f"{pair}: Выставлен ордер на покупку {amount:.4f} {base} на Binance по {binance_bid}, Уверенность: {prob:.2f}"
             logging.info(msg)
-            await exchanges['binance'].telegram_bot_sendtext(msg)
+            await send_telegram_message(msg)  # Используем send_telegram_message
         else:
             logging.warning(
                 f"{pair}: Недостаточно баланса для покупки: требуется {required_balance:.2f}, доступно {balance_quote_binance:.2f} или остаток станет отрицательным")
@@ -157,7 +157,7 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
                 balances[pair]['base'] = 0.0
             msg = f"{pair}: Выставлен рыночный ордер на продажу остатков {filled_amount:.4f} {base} по {filled_price:.2f}, получено {sold_value:.2f} USDT"
             logging.info(msg)
-            await exchanges['binance'].telegram_bot_sendtext(msg)
+            await send_telegram_message(msg)  # Используем send_telegram_message
             await asyncio.sleep(1)
         except Exception as e:
             logging.error(f"{pair}: Ошибка продажи остатков: {str(e)}")

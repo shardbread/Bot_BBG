@@ -1,62 +1,51 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 import ccxt.async_support as ccxt
 import logging
 import asyncio
-from config import BINANCE_API_KEY, BINANCE_SECRET, BINGX_API_KEY, BINGX_SECRET_KEY, TELEGRAM_BOT_TOKEN, \
-    TELEGRAM_CHAT_ID, MODE
-import httpx
 
-
-async def setup_exchange(exchange_name):
-    if exchange_name == 'binance':
-        exchange = ccxt.binance({
-            'apiKey': BINANCE_API_KEY,
-            'secret': BINANCE_SECRET,
-            'enableRateLimit': True,
-            'options': {'defaultType': 'spot'},
-        })
-        if MODE == "test":
-            exchange.set_sandbox_mode(True)
-    elif exchange_name == 'bingx':
-        exchange = ccxt.bingx({
-            'apiKey': BINGX_API_KEY,
-            'secret': BINGX_SECRET_KEY,
-            'enableRateLimit': True,
-        })
-    await exchange.load_markets()
+async def setup_exchange(exchange_name, api_key, secret_key, testnet=False):
+    exchange_class = getattr(ccxt, exchange_name)
+    exchange = exchange_class({
+        'apiKey': api_key,
+        'secret': secret_key,
+        'enableRateLimit': True,
+        'options': {'defaultType': 'spot'},
+    })
+    if testnet:
+        exchange.set_sandbox_mode(True)
     return exchange
 
-async def fetch_fees(exchange):
-    fees = {}
-    markets = await exchange.load_markets()
-    for symbol in markets:
-        fees[symbol] = {'maker': markets[symbol]['maker'], 'taker': markets[symbol]['taker']}
-    return fees
-
-async def get_ticker(exchange, symbol):
-    ticker = await exchange.fetch_ticker(symbol)
-    return {
-        'bid': ticker['bid'],
-        'ask': ticker['ask'],
-        'last': ticker['last']
-    }
+async def get_ticker(exchange, pair):
+    try:
+        ticker = await exchange.fetch_ticker(pair)
+        return ticker
+    except Exception as e:
+        logging.error(f"Ошибка при получении тикера для {pair}: {str(e)}")
+        return {'bid': 0, 'ask': 0}
 
 async def manage_request(exchange, method, *args, **kwargs):
     try:
-        result = await getattr(exchange, method)(*args, **kwargs)
-        return result
+        if method == 'create_limit_buy_order':
+            order = await exchange.create_limit_buy_order(*args, **kwargs)
+        elif method == 'create_market_sell_order':
+            order = await exchange.create_market_sell_order(*args, **kwargs)
+        elif method == 'fetch_order':
+            order = await exchange.fetch_order(*args, **kwargs)
+        elif method == 'cancel_order':
+            order = await exchange.cancel_order(*args, **kwargs)
+        else:
+            raise ValueError(f"Неизвестный метод: {method}")
+        return order
     except Exception as e:
         logging.error(f"Ошибка в {method}: {str(e)}")
         raise e
 
-async def send_telegram_message(message):
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        logging.warning("Telegram токен или чат ID не настроены")
-        return
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    async with httpx.AsyncClient() as client:
-        try:
-            await client.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": message})
-        except Exception as e:
-            logging.error(f"Ошибка отправки Telegram сообщения: {str(e)}")
+async def send_telegram_message(bot_message):
+    # Заглушка для отправки в Telegram (пока без реальной интеграции)
+    logging.info(f"Telegram сообщение: {bot_message}")
+    # Для реальной отправки раскомментируйте и настройте:
+    # import telegram
+    # bot = telegram.Bot(token='YOUR_TELEGRAM_BOT_TOKEN')
+    # await bot.send_message(chat_id='YOUR_CHAT_ID', text=bot_message)
