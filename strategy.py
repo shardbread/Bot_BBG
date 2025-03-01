@@ -154,28 +154,22 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
         # Устанавливаем минимальную точность и рассчитываем amount
         if pair == 'XRP/USDT':
             min_amount = max(min_amount, 0.1)
-            amount = max(min_amount, balance_base)
-            amount = round(amount, 1)  # Точность до 1 знака
+            amount = round(max(min_amount, balance_base), 1)
         elif pair == 'ETH/USDT':
             min_amount = max(min_amount, 0.001)
-            amount = max(min_amount, balance_base)
-            amount = round(amount, 3)
+            amount = round(max(min_amount, balance_base), 3)
         elif pair == 'BNB/USDT':
             min_amount = max(min_amount, 0.01)
-            amount = max(min_amount, balance_base)
-            amount = round(amount, 2)
+            amount = round(max(min_amount, balance_base), 2)
         elif pair == 'ADA/USDT':
             min_amount = max(min_amount, 0.1)
-            amount = max(min_amount, balance_base)
-            amount = round(amount, 1)
+            amount = round(max(min_amount, balance_base), 1)
         elif pair == 'DOGE/USDT':
             min_amount = max(min_amount, 1.0)
-            amount = max(min_amount, balance_base)
-            amount = round(amount, 0)  # Целое число
+            amount = round(max(min_amount, balance_base), 0)
         elif pair == 'BTC/USDT':
             min_amount = max(min_amount, 0.0001)
-            amount = max(min_amount, balance_base)
-            amount = round(amount, 4)
+            amount = round(max(min_amount, balance_base), 4)
         else:
             amount = max(min_amount, balance_base)
 
@@ -190,7 +184,7 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
             sold_value = filled_amount * filled_price
             balances[pair]['quote_binance'] += sold_value
             balances[pair]['base'] -= filled_amount
-            if balances[pair]['base'] < 0:
+            if balances[pair]['base'] < 0:  # Предотвращаем отрицательный баланс
                 balances[pair]['base'] = 0.0
             balances[pair]['revenue'] = balances[pair].get('revenue', 0) + sold_value
             msg = f"{pair}: Выставлен рыночный ордер на продажу остатков {filled_amount:.4f} {base} по {filled_price:.2f}, получено {sold_value:.2f} USDT"
@@ -203,6 +197,7 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
     from globals import daily_losses
     print(
         f"{pair}: {balances[pair]['base']:.4f} {base}, Binance: {balances[pair]['quote_binance']:.2f} USDT, BingX: {balances[pair]['quote_bingx']:.2f} USDT, Общие комиссии ${balances[pair]['total_fees']:.2f}, Дневные убытки ${daily_losses[pair]:.2f}")
+
 
 async def finalize_report(exchanges, balances):
     total_usdt = sum(balance['quote_binance'] for balance in balances.values())
