@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 import asyncio
 import logging
-from config import BINANCE_API_KEY, BINANCE_SECRET, BINGX_API_KEY, BINGX_SECRET_KEY, TRADING_PAIRS, ITERATIONS
+from config import BINANCE_API_KEY, BINANCE_SECRET, BINGX_API_KEY, BINGX_SECRET_KEY, TRADING_PAIRS, ITERATIONS, \
+    TRADE_FRACTION
 from exchange import setup_exchange
 from model import train_lstm_model, train_gru_model
 from data import get_historical_data, prepare_lstm_data, add_features
@@ -86,7 +87,7 @@ async def main():
         tasks = [
             trade_pair(
                 exchanges, pair_data, balances, pred_model, scaler, fees, atr,
-                loss_model, loss_scaler, open_orders, trade_fraction=0.1
+                loss_model, loss_scaler, open_orders, trade_fraction=TRADE_FRACTION
             ) for pair_data in profitable_pairs
         ]
         await asyncio.gather(*tasks)

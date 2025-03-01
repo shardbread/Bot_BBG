@@ -23,6 +23,7 @@ MIN_ORDER_SIZE = 10.0
 MIN_SELL_SIZE = 20.0  # Увеличенный порог для продажи остатков
 MAX_PREDICTION = 0.05
 MAX_PROB = 0.25  # Снижено с 0.3 до 0.25 для охвата всех пар
+TRADE_FRACTION = 0.3
 
 BINANCE_API_KEY = os.getenv('BINANCE_API_KEY')
 BINANCE_SECRET = os.getenv('BINANCE_SECRET')
