@@ -29,10 +29,22 @@ async def main():
 
     # Подготовка данных и обучение моделей
     historical_data = await get_historical_data(binance, 'BTC/USDT', limit=1000)
-    historical_data = await add_features(historical_data)  # Добавляем индикаторы перед подготовкой
+    if historical_data.empty:
+        logging.error("Не удалось получить исторические данные, завершаем работу")
+        return
+    historical_data = await add_features(historical_data)
+    if historical_data.empty:
+        logging.error("Не удалось добавить признаки к данным, завершаем работу")
+        return
     X, y, scaler = prepare_lstm_data(historical_data)
+    if X.size == 0:
+        logging.error("Данные для LSTM пусты, завершаем работу")
+        return
     pred_model = train_lstm_model(X, y)
     X_loss, y_loss, loss_scaler = prepare_lstm_data(historical_data)
+    if X_loss.size == 0:
+        logging.error("Данные для GRU пусты, завершаем работу")
+        return
     loss_model = train_gru_model(X_loss, y_loss)
 
     # Инициализация балансов
