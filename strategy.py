@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-from config import FIXED_STOP_LOSS, MIN_ORDER_SIZE, TRADING_PAIRS, LOOKBACK, MAX_PREDICTION, MAX_PROB, MIN_SELL_SIZE
+from config import FIXED_STOP_LOSS, MIN_ORDER_SIZE, TRADING_PAIRS, LOOKBACK, MAX_PREDICTION, MAX_PROB, MIN_SELL_SIZE, ITERATIONS
 from data import get_historical_data, prepare_lstm_data, add_features
 from exchange import get_ticker, manage_request, send_telegram_message
 from price_calculator import get_best_price_and_amount, get_order_book
@@ -20,7 +20,7 @@ async def select_profitable_pairs(exchanges, fees, pred_model, scaler, balances)
     for pair in TRADING_PAIRS:
         try:
             binance_ticker = await get_ticker(exchanges['binance'], pair)
-            bingx_ticker = binance_ticker  # BingX пока не используется активно
+            bingx_ticker = binance_ticker
 
             binance_bid = binance_ticker['bid']
             binance_ask = binance_ticker['ask']
@@ -78,7 +78,7 @@ async def select_profitable_pairs(exchanges, fees, pred_model, scaler, balances)
     return selected_pairs
 
 
-async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, loss_model, loss_scaler, open_orders, trade_fraction):
+async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, loss_model, loss_scaler, open_orders, trade_fraction, iteration):
     pair, prediction = pair_data
     await check_and_cancel_orders(exchanges['binance'], pair, balances, atr, open_orders)
 
@@ -168,9 +168,13 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
         pair_min_amount = min_amounts.get(pair, 0.1)
         pair_precision = precisions.get(pair, 2)
 
-        # Расчет суммы продажи на основе trade_fraction
-        calculated_amount = balance_base * trade_fraction
-        amount = max(calculated_amount, pair_min_amount)
+        # Если это последняя итерация и последняя пара, продаём весь баланс
+        if iteration == ITERATIONS - 1 and pair == TRADING_PAIRS[-1]:
+            amount = balance_base
+        else:
+            calculated_amount = balance_base * trade_fraction
+            amount = max(calculated_amount, pair_min_amount)
+
         amount = round(amount, pair_precision)
         amount = min(amount, balance_base)
 

@@ -24,9 +24,8 @@ async def main():
 
     # Инициализация биржи (только Binance, BingX временно отключён)
     binance = await setup_exchange('binance', BINANCE_API_KEY, BINANCE_SECRET, testnet=True)
-    # bingx = await setup_exchange('bingx', BINGX_API_KEY, BINGX_SECRET_KEY)
-    exchanges = {'binance': binance}  # Временно убираем 'bingx': bingx
-    fees = {'binance': 0.001}  # Временно убираем 'bingx': 0.001
+    exchanges = {'binance': binance}
+    fees = {'binance': 0.001}
 
     # Подготовка данных и обучение моделей
     historical_data = await get_historical_data(binance, 'BTC/USDT', limit=1000)
@@ -55,11 +54,11 @@ async def main():
         pair: {
             'base': 0.0,
             'quote_binance': initial_balance / len(TRADING_PAIRS),
-            'quote_bingx': 0.0,  # Временно устанавливаем 0 для BingX
+            'quote_bingx': 0.0,
             'entry_price': 0.0,
             'total_fees': 0.0,
-            'cost': 0.0,    # Затраты на покупку
-            'revenue': 0.0  # Доходы от продажи
+            'cost': 0.0,
+            'revenue': 0.0
         } for pair in TRADING_PAIRS
     }
 
@@ -70,8 +69,8 @@ async def main():
     open_orders = {pair: [] for pair in TRADING_PAIRS}
 
     # Основной цикл торговли
-    for iteration in range(1, ITERATIONS + 1):
-        logging.info(f"Начало итерации {iteration}")
+    for iteration in range(ITERATIONS):
+        logging.info(f"Начало итерации {iteration + 1}")
         total_balance = sum(b['quote_binance'] for b in balances.values())
         logging.info(f"Текущий баланс: Total USDT: {total_balance:.2f}, Детали по парам: {balances}")
 
@@ -87,12 +86,13 @@ async def main():
         tasks = [
             trade_pair(
                 exchanges, pair_data, balances, pred_model, scaler, fees, atr,
-                loss_model, loss_scaler, open_orders, trade_fraction=TRADE_FRACTION
+                loss_model, loss_scaler, open_orders, trade_fraction=TRADE_FRACTION,
+                iteration=iteration  # Передаём номер итерации
             ) for pair_data in profitable_pairs
         ]
         await asyncio.gather(*tasks)
 
-        logging.info(f"Конец итерации {iteration}")
+        logging.info(f"Конец итерации {iteration + 1}")
 
     logging.info("Достигнута последняя итерация, завершаем работу")
     await finalize_report(exchanges, balances)
@@ -107,7 +107,6 @@ async def main():
     # Закрытие соединения
     logging.info("Закрытие соединения с Binance")
     await binance.close()
-    # await bingx.close()  # Временно отключено
 
 if __name__ == "__main__":
     asyncio.run(main())
