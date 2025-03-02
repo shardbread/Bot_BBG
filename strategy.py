@@ -106,7 +106,7 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
             amount = max(amount, 0.01)
             amount = round(amount, 3)
         elif pair == 'BNB/USDT':
-            amount = max(amount, 0.1)
+            amount = max(amount, 0.3)
             amount = round(amount, 2)
         elif pair == 'ADA/USDT':
             amount = max(amount, 10.0)
