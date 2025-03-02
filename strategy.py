@@ -20,7 +20,7 @@ async def select_profitable_pairs(exchanges, fees, pred_model, scaler, balances)
     for pair in TRADING_PAIRS:
         try:
             binance_ticker = await get_ticker(exchanges['binance'], pair)
-            bingx_ticker = binance_ticker  # Пока BingX не используется активно
+            bingx_ticker = binance_ticker  # BingX пока не используется активно
 
             binance_bid = binance_ticker['bid']
             binance_ask = binance_ticker['ask']
@@ -109,7 +109,7 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
             amount = max(amount, 0.1)
             amount = round(amount, 2)
         elif pair == 'ADA/USDT':
-            amount = max(amount, 15.0)  # Увеличено до 15 для ADA
+            amount = max(amount, 15.0)
             amount = round(amount, 1)
         elif pair == 'DOGE/USDT':
             amount = max(amount, 100.0)
@@ -144,41 +144,34 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
     available_base = balance_info.get(base, {}).get('free', 0)
     balance_base = min(balances[pair]['base'], available_base)
     if balance_base > 0 and balance_base * binance_ask >= MIN_SELL_SIZE:
-        min_notional_sell = 10.0  # Минимальная сумма в USDT
-        min_amount = min_notional_sell / binance_ask  # Минимальное количество в базовой валюте
+        min_notional_sell = 10.0
+        min_amount = min_notional_sell / binance_ask
 
-        # Определение минимальных размеров и точности для каждой пары
+        # Минимальные суммы и точность для каждой пары
         min_amounts = {
-            'XRP/USDT': 5.0,    # Минимум 5 XRP
-            'ADA/USDT': 15.0,   # Минимум 15 ADA
-            'BNB/USDT': 0.1,    # Минимум 0.1 BNB
-            'ETH/USDT': 0.01,   # Минимум 0.01 ETH
-            'BTC/USDT': 0.0001, # Минимум 0.0001 BTC
-            'DOGE/USDT': 100.0, # Минимум 100 DOGE
+            'XRP/USDT': 5.0,
+            'ADA/USDT': 15.0,
+            'BNB/USDT': 0.1,
+            'ETH/USDT': 0.01,
+            'BTC/USDT': 0.0001,
+            'DOGE/USDT': 100.0,
         }
         precisions = {
-            'XRP/USDT': 1,  # 1 знак после запятой
-            'ADA/USDT': 1,  # 1 знак после запятой
-            'BNB/USDT': 2,  # 2 знака после запятой
-            'ETH/USDT': 3,  # 3 знака после запятой
-            'BTC/USDT': 4,  # 4 знака после запятой
-            'DOGE/USDT': 0, # 0 знаков после запятой (целое число)
+            'XRP/USDT': 1,
+            'ADA/USDT': 1,
+            'BNB/USDT': 2,
+            'ETH/USDT': 3,
+            'BTC/USDT': 4,
+            'DOGE/USDT': 0,
         }
 
-        # Получение минимального значения и точности для текущей пары
-        pair_min_amount = min_amounts.get(pair, 0.1)  # По умолчанию 0.1
-        pair_precision = precisions.get(pair, 2)      # По умолчанию 2 знака
+        pair_min_amount = min_amounts.get(pair, 0.1)
+        pair_precision = precisions.get(pair, 2)
 
-        # Расчёт желаемого количества для продажи
+        # Расчет суммы продажи на основе trade_fraction
         calculated_amount = balance_base * trade_fraction
-
-        # Убедитесь, что amount не меньше минимального значения
         amount = max(calculated_amount, pair_min_amount)
-
-        # Округление до нужной точности
         amount = round(amount, pair_precision)
-
-        # Ограничение доступным балансом
         amount = min(amount, balance_base)
 
         logging.info(f"{pair}: Рассчитан amount={amount:.6f} для продажи остатков, ask={binance_ask}, balance_base={balance_base}, available_base={available_base}")
