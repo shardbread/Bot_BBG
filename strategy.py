@@ -169,7 +169,11 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
         pair_min_amount = min_amounts.get(pair, 0.1)
         pair_precision = precisions.get(pair, 2)
 
-        # Если это последняя итерация, продаём весь баланс
+        # Синхронизируем balance_base с available_base перед продажей
+        balances[pair]['base'] = available_base
+        balance_base = available_base
+
+        # Если это последняя итерация, продаём весь доступный баланс
         if iteration == ITERATIONS - 1:
             amount = balance_base
         else:
