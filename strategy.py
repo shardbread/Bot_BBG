@@ -96,7 +96,8 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
     atr_stop_loss = atr * 2 if atr else 0.04
     fixed_stop_loss = entry_price * (1 - FIXED_STOP_LOSS) if entry_price else 0
 
-    if balance_quote_binance > MIN_ORDER_SIZE:
+    # Покупка выполняется только если это не последняя итерация
+    if iteration != ITERATIONS - 1 and balance_quote_binance > MIN_ORDER_SIZE:
         min_notional = 10.0
         amount = max(min_notional / binance_bid, balance_quote_binance * trade_fraction / binance_bid, binance_bid_amount)
         if pair == 'XRP/USDT':
@@ -168,8 +169,8 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
         pair_min_amount = min_amounts.get(pair, 0.1)
         pair_precision = precisions.get(pair, 2)
 
-        # Если это последняя итерация и последняя пара, продаём весь баланс
-        if iteration == ITERATIONS - 1 and pair == TRADING_PAIRS[-1]:
+        # Если это последняя итерация, продаём весь баланс
+        if iteration == ITERATIONS - 1:
             amount = balance_base
         else:
             calculated_amount = balance_base * trade_fraction
@@ -187,8 +188,7 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
             sold_value = filled_amount * filled_price
             balances[pair]['quote_binance'] += sold_value
             balances[pair]['base'] -= filled_amount
-            if balances[pair]['base'] < 0:
-                balances[pair]['base'] = 0.0
+            balances[pair]['base'] = max(balances[pair]['base'], 0.0)  # Предотвращаем отрицательный баланс
             balances[pair]['revenue'] = balances[pair].get('revenue', 0) + sold_value
             msg = f"{pair}: Выставлен рыночный ордер на продажу остатков {filled_amount:.4f} {base} по {filled_price:.2f}, получено {sold_value:.2f} USDT"
             logging.info(msg)

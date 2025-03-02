@@ -79,18 +79,29 @@ async def main():
 
         if not profitable_pairs:
             logging.info("Нет прибыльных пар для торговли в этой итерации")
-            continue
+        else:
+            atr = 0.02  # Фиксированное значение ATR (2%) как заглушка
 
-        atr = 0.02  # Фиксированное значение ATR (2%) как заглушка
+            tasks = [
+                trade_pair(
+                    exchanges, pair_data, balances, pred_model, scaler, fees, atr,
+                    loss_model, loss_scaler, open_orders, trade_fraction=TRADE_FRACTION,
+                    iteration=iteration
+                ) for pair_data in profitable_pairs
+            ]
+            await asyncio.gather(*tasks)
 
-        tasks = [
-            trade_pair(
-                exchanges, pair_data, balances, pred_model, scaler, fees, atr,
-                loss_model, loss_scaler, open_orders, trade_fraction=TRADE_FRACTION,
-                iteration=iteration  # Передаём номер итерации
-            ) for pair_data in profitable_pairs
-        ]
-        await asyncio.gather(*tasks)
+        # В последней итерации продаём остатки для всех пар с ненулевым balance_base
+        if iteration == ITERATIONS - 1:
+            for pair in TRADING_PAIRS:
+                if balances[pair]['base'] > 0:
+                    # Создаём фиктивный pair_data для вызова trade_pair
+                    pair_data = (pair, 0.0)  # prediction не важен для продажи остатков
+                    await trade_pair(
+                        exchanges, pair_data, balances, pred_model, scaler, fees, atr,
+                        loss_model, loss_scaler, open_orders, trade_fraction=TRADE_FRACTION,
+                        iteration=iteration
+                    )
 
         logging.info(f"Конец итерации {iteration + 1}")
 
