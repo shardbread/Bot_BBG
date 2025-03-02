@@ -191,8 +191,12 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
             filled_price = order.get('price', binance_ask) or binance_ask
             sold_value = filled_amount * filled_price
             balances[pair]['quote_binance'] += sold_value
-            balances[pair]['base'] -= filled_amount
-            balances[pair]['base'] = max(balances[pair]['base'], 0.0)  # Предотвращаем отрицательный баланс
+            # Если это последняя итерация, устанавливаем balance_base в 0 после продажи
+            if iteration == ITERATIONS - 1:
+                balances[pair]['base'] = 0.0
+            else:
+                balances[pair]['base'] -= filled_amount
+                balances[pair]['base'] = max(balances[pair]['base'], 0.0)  # Предотвращаем отрицательный баланс
             balances[pair]['revenue'] = balances[pair].get('revenue', 0) + sold_value
             msg = f"{pair}: Выставлен рыночный ордер на продажу остатков {filled_amount:.4f} {base} по {filled_price:.2f}, получено {sold_value:.2f} USDT"
             logging.info(msg)
