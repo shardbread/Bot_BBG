@@ -166,7 +166,7 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
             'XRP/USDT': 1,
             'ADA/USDT': 1,
             'BNB/USDT': 2,
-            'ETH/USDT': 4,  # Увеличена точность для ETH
+            'ETH/USDT': 4,
             'BTC/USDT': 4,
             'DOGE/USDT': 0,
         }
@@ -176,9 +176,9 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
 
         if iteration == ITERATIONS - 1:
             amount = balance_base
-            # Убедимся, что amount не меньше минимальной точности
-            if amount < pair_min_amount:
-                amount = max(amount, pair_min_amount)
+            # Убедимся, что amount не меньше минимальной точности и порога notional
+            if amount < pair_min_amount or amount * binance_ask < min_notional_sell:
+                amount = max(pair_min_amount, min_notional_sell / binance_ask)
         else:
             calculated_amount = balance_base * trade_fraction
             amount = max(calculated_amount, pair_min_amount)
@@ -186,7 +186,7 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
         amount = round(amount, pair_precision)
         amount = min(amount, balance_base)
 
-        if amount * binance_ask >= MIN_SELL_SIZE or (iteration == ITERATIONS - 1 and amount >= pair_min_amount):
+        if amount * binance_ask >= min_notional_sell or iteration == ITERATIONS - 1:
             logging.info(
                 f"{pair}: Рассчитан amount={amount:.6f} для продажи остатков, ask={binance_ask}, balance_base={balance_base}, available_base={available_base}")
             try:
@@ -211,7 +211,7 @@ async def trade_pair(exchanges, pair_data, balances, model, scaler, fees, atr, l
             except Exception as e:
                 logging.error(f"{pair}: Ошибка продажи остатков: {str(e)}")
         else:
-            logging.info(f"{pair}: Остаток {amount:.6f} ниже минимального размера для продажи")
+            logging.info(f"{pair}: Остаток {amount:.6f} слишком мал для продажи (ниже минимального порога {min_notional_sell} USDT)")
 
     from globals import daily_losses
     print(
