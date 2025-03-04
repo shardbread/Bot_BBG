@@ -1,55 +1,72 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# model.py
-import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, GRU, Dense, Dropout, Bidirectional
-from sklearn.model_selection import KFold
 import numpy as np
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, GRU
+from sklearn.preprocessing import MinMaxScaler
 import logging
+from data import get_historical_data, prepare_lstm_data, add_features
+from config import LOOKBACK
+
+async def train_models(exchange, pair):
+    try:
+        # Получение исторических данных с биржи
+        historical_data = await get_historical_data(exchange, pair, limit=LOOKBACK + 100)
+        if historical_data is None or historical_data.empty:
+            logging.error(f"Не удалось получить исторические данные для {pair}")
+            return None, None
+
+        # Добавление признаков
+        data_with_features = await add_features(historical_data)
+        if data_with_features is None or data_with_features.empty:
+            logging.error(f"Не удалось добавить признаки для {pair}")
+            return None, None
+
+        # Подготовка данных для LSTM
+        X, y, scaler = prepare_lstm_data(data_with_features)
+        if X.size == 0 or y.size == 0:
+            logging.error(f"Подготовленные данные для {pair} пусты: X={X.shape}, y={y.shape}")
+            return None, None
+
+        logging.info(f"Подготовлены данные для LSTM: X.shape={X.shape}, y.mean={np.mean(y):.4f}")
+
+        # Построение LSTM модели
+        lstm_model = build_lstm_model((X.shape[1], X.shape[2]))
+        lstm_model.fit(X, y, epochs=10, batch_size=32, verbose=0)
+        lstm_accuracy = evaluate_model(lstm_model, X, y)
+        logging.info(f"Модель LSTM обучена, средняя точность: {lstm_accuracy:.4f}")
+
+        # Построение GRU модели
+        gru_model = build_gru_model((X.shape[1], X.shape[2]))
+        gru_model.fit(X, y, epochs=10, batch_size=32, verbose=0)
+        gru_accuracy = evaluate_model(gru_model, X, y)
+        logging.info(f"Модель GRU обучена, средняя точность: {gru_accuracy:.4f}")
+
+        # Выбор модели с лучшей точностью
+        pred_model = lstm_model if lstm_accuracy > gru_accuracy else gru_model
+        return pred_model, scaler
+
+    except Exception as e:
+        logging.error(f"Ошибка в train_models: {str(e)}")
+        return None, None
 
 def build_lstm_model(input_shape):
-    model = Sequential([
-        Bidirectional(LSTM(100, return_sequences=True), input_shape=input_shape),
-        Dropout(0.2),
-        Bidirectional(LSTM(50)),
-        Dropout(0.2),
-        Dense(25, activation='relu'),
-        Dense(1, activation='sigmoid')
-    ])
-    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), loss='binary_crossentropy', metrics=['accuracy'])
+    model = Sequential()
+    model.add(LSTM(50, return_sequences=True, input_shape=input_shape))
+    model.add(LSTM(50))
+    model.add(Dense(1, activation='sigmoid'))
+    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
     return model
 
 def build_gru_model(input_shape):
-    model = Sequential([
-        Bidirectional(GRU(100, return_sequences=True), input_shape=input_shape),
-        Dropout(0.2),
-        Bidirectional(GRU(50)),
-        Dropout(0.2),
-        Dense(25, activation='relu'),
-        Dense(1, activation='sigmoid')
-    ])
-    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), loss='binary_crossentropy', metrics=['accuracy'])
+    model = Sequential()
+    model.add(GRU(50, return_sequences=True, input_shape=input_shape))
+    model.add(GRU(50))
+    model.add(Dense(1, activation='sigmoid'))
+    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
     return model
 
-def train_model(model, X, y, model_name):
-    kfold = KFold(n_splits=5, shuffle=True, random_state=42)
-    accuracies = []
-    for train_idx, val_idx in kfold.split(X):
-        X_train, X_val = X[train_idx], X[val_idx]
-        y_train, y_val = y[train_idx], y[val_idx]
-        early_stopping = tf.keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=10, restore_best_weights=True)
-        history = model.fit(X_train, y_train, epochs=100, batch_size=32, validation_data=(X_val, y_val),
-                           callbacks=[early_stopping], verbose=0)
-        val_accuracy = max(history.history['val_accuracy'])
-        accuracies.append(val_accuracy)
-    mean_accuracy = np.mean(accuracies)
-    logging.info(f"Модель {model_name} обучена, средняя точность: {mean_accuracy:.4f}")
-    return model
-
-def train_models(X, y):
-    lstm_model = build_lstm_model((X.shape[1], X.shape[2]))
-    gru_model = build_gru_model((X.shape[1], X.shape[2]))
-    lstm_model = train_model(lstm_model, X, y, "LSTM")
-    gru_model = train_model(gru_model, X, y, "GRU")
-    return lstm_model, gru_model
+def evaluate_model(model, X, y):
+    predictions = model.predict(X, verbose=0)
+    accuracy = np.mean((predictions.flatten() > 0.5) == y)
+    return accuracy
